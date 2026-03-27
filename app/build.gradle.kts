@@ -17,6 +17,9 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        // Override in local.properties or CI env — never commit real values
+        buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"\"")
     }
 
     buildTypes {
@@ -28,6 +31,8 @@ android {
         debug {
             isDebuggable = true
             applicationIdSuffix = ".debug"
+            buildConfigField("String", "TAILSCALE_CLIENT_ID",
+                "\"${project.findProperty("TAILSCALE_CLIENT_ID") ?: "\"}\"")
         }
     }
 
@@ -36,7 +41,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
@@ -84,7 +92,7 @@ dependencies {
     implementation("com.hierynomus:sshj:0.38.0")
     implementation("org.bouncycastle:bcprov-jdk15on:1.70")
 
-    // Auth
+    // Auth (OAuth PKCE)
     implementation("net.openid:appauth:0.11.1")
 
     // Security & Biometric
@@ -97,7 +105,7 @@ dependencies {
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.0")
 
-    // Splash
+    // Splash screen
     implementation("androidx.core:core-splashscreen:1.0.1")
 
     // Debug
