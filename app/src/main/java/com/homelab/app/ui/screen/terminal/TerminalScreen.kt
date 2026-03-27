@@ -29,7 +29,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.homelab.app.data.model.SessionStatus
 import com.homelab.app.data.security.BiometricHelper
@@ -150,7 +149,7 @@ fun TerminalScreen(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text("Reconnecting…", style = MaterialTheme.typography.bodySmall)
+                    Text("Reconnecting\u2026", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -188,7 +187,7 @@ fun TerminalScreen(
                         singleLine = true,
                         decorationBox = { inner ->
                             if (inputText.isEmpty()) {
-                                Text("Type command…",
+                                Text("Type command\u2026",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 14.sp,
                                     color = TerminalText.copy(alpha = 0.3f)
@@ -232,9 +231,9 @@ private fun SessionStatus.color() = when (this) {
 }
 
 private fun SessionStatus.displayName() = when (this) {
-    SessionStatus.CONNECTING -> "Connecting…"
+    SessionStatus.CONNECTING -> "Connecting\u2026"
     SessionStatus.CONNECTED -> "Connected"
-    SessionStatus.RECONNECTING -> "Reconnecting…"
+    SessionStatus.RECONNECTING -> "Reconnecting\u2026"
     SessionStatus.FAILED -> "Failed"
     SessionStatus.DISCONNECTED -> "Disconnected"
 }
@@ -247,10 +246,10 @@ private fun SpecialKeyRow(onKey: (SpecialKey) -> Unit, modifier: Modifier = Modi
         "Ctrl+Z" to SpecialKey.CTRL_Z,
         "Tab" to SpecialKey.TAB,
         "Esc" to SpecialKey.ESCAPE,
-        "↑" to SpecialKey.UP,
-        "↓" to SpecialKey.DOWN,
-        "←" to SpecialKey.LEFT,
-        "→" to SpecialKey.RIGHT
+        "\u2191" to SpecialKey.UP,
+        "\u2193" to SpecialKey.DOWN,
+        "\u2190" to SpecialKey.LEFT,
+        "\u2192" to SpecialKey.RIGHT
     )
     Row(
         modifier = modifier

@@ -1,7 +1,5 @@
 package com.homelab.app.ui.screen.home
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,16 +7,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.homelab.app.data.model.Host
 import com.homelab.app.ui.component.HostCard
-import com.homelab.app.ui.component.StatusDot
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +27,19 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val pullRefreshState = rememberPullToRefreshState()
+
+    if (pullRefreshState.isRefreshing) {
+        LaunchedEffect(Unit) {
+            viewModel.refresh()
+        }
+    }
+
+    LaunchedEffect(state.isRefreshing) {
+        if (!state.isRefreshing) {
+            pullRefreshState.endRefresh()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -48,10 +59,10 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.isRefreshing,
-            onRefresh = { viewModel.refresh() },
-            modifier = Modifier.padding(padding)
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .nestedScroll(pullRefreshState.nestedScrollConnection)
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -143,6 +154,11 @@ fun HomeScreen(
                     }
                 }
             }
+
+            PullToRefreshContainer(
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
 }

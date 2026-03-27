@@ -11,7 +11,6 @@ import javax.inject.Inject
 @HiltAndroidApp
 class HomelabApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
-    @Inject lateinit var workManager: WorkManager
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -21,6 +20,6 @@ class HomelabApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         // Start periodic host sync (every 60 s while network is available)
-        HostSyncWorker.schedule(workManager)
+        HostSyncWorker.schedule(WorkManager.getInstance(this))
     }
 }
