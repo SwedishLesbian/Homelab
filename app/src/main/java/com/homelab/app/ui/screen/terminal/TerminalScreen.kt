@@ -1,5 +1,8 @@
 package com.homelab.app.ui.screen.terminal
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -10,15 +13,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -26,11 +29,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.homelab.app.data.model.SessionStatus
+import com.homelab.app.data.security.BiometricHelper
+import com.homelab.app.data.security.BiometricResult
+import com.homelab.app.ui.theme.HomelabGreen
 import com.homelab.app.ui.theme.TerminalBackground
 import com.homelab.app.ui.theme.TerminalText
-import com.homelab.app.ui.theme.HomelabGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,9 +55,17 @@ fun TerminalScreen(
         viewModel.connect(sessionId, hostId)
     }
 
+    // Auto-scroll to bottom on new output
     LaunchedEffect(state.outputLines.size) {
         if (state.outputLines.isNotEmpty()) {
             listState.animateScrollToItem(state.outputLines.size - 1)
+        }
+    }
+
+    // Auto-focus input when connected
+    LaunchedEffect(state.status) {
+        if (state.status == SessionStatus.CONNECTED) {
+            runCatching { focusRequester.requestFocus() }
         }
     }
 
@@ -66,14 +80,14 @@ fun TerminalScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
                 viewModel.disconnect()
                 onBack()
             }) {
-                Icon(Icons.Default.ArrowBack, "Back", tint = TerminalText)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TerminalText)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -81,15 +95,15 @@ fun TerminalScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = TerminalText
                 )
-                Text(
-                    text = state.status.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when (state.status) {
-                        SessionStatus.CONNECTED -> HomelabGreen
-                        SessionStatus.FAILED -> MaterialTheme.colorScheme.error
-                        else -> TerminalText.copy(alpha = 0.6f)
-                    }
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusIndicator(state.status)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = state.status.displayName(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = state.status.color()
+                    )
+                }
             }
         }
 
@@ -107,65 +121,122 @@ fun TerminalScreen(
                     text = line,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    color = TerminalText
+                    lineHeight = 19.sp,
+                    softWrap = true
                 )
             }
-
             state.errorMessage?.let { error ->
                 item {
                     Text(
                         text = error,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
         }
 
-        // Keyboard toolbar
-        if (state.status == SessionStatus.CONNECTED) {
-            SpecialKeyRow(
-                onKey = viewModel::sendSpecialKey,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // Reconnect banner
+        AnimatedVisibility(
+            visible = state.status == SessionStatus.RECONNECTING,
+            enter = fadeIn(), exit = fadeOut()
+        ) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Reconnecting…", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
 
-            // Input row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
-                    textStyle = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
-                        color = TerminalText
-                    ),
-                    cursorBrush = SolidColor(HomelabGreen),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Send
-                    ),
-                    singleLine = true
+        // Special key toolbar + input — only when connected
+        AnimatedVisibility(visible = state.status == SessionStatus.CONNECTED) {
+            Column {
+                SpecialKeyRow(
+                    onKey = viewModel::sendSpecialKey,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                IconButton(onClick = {
-                    viewModel.sendInput(inputText + "\n")
-                    inputText = ""
-                }) {
-                    Icon(Icons.Default.Close, "Send", tint = HomelabGreen)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        textStyle = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            color = TerminalText
+                        ),
+                        cursorBrush = SolidColor(HomelabGreen),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Ascii,
+                            imeAction = ImeAction.Send
+                        ),
+                        singleLine = true,
+                        decorationBox = { inner ->
+                            if (inputText.isEmpty()) {
+                                Text("Type command…",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 14.sp,
+                                    color = TerminalText.copy(alpha = 0.3f)
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                    IconButton(onClick = {
+                        viewModel.sendInput(inputText + "\n")
+                        inputText = ""
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = HomelabGreen
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun StatusIndicator(status: SessionStatus) {
+    val color = status.color()
+    Surface(
+        modifier = Modifier.size(6.dp),
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = color
+    ) {}
+}
+
+@Composable
+private fun SessionStatus.color() = when (this) {
+    SessionStatus.CONNECTED -> HomelabGreen
+    SessionStatus.CONNECTING, SessionStatus.RECONNECTING -> MaterialTheme.colorScheme.primary
+    SessionStatus.FAILED -> MaterialTheme.colorScheme.error
+    SessionStatus.DISCONNECTED -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+}
+
+private fun SessionStatus.displayName() = when (this) {
+    SessionStatus.CONNECTING -> "Connecting…"
+    SessionStatus.CONNECTED -> "Connected"
+    SessionStatus.RECONNECTING -> "Reconnecting…"
+    SessionStatus.FAILED -> "Failed"
+    SessionStatus.DISCONNECTED -> "Disconnected"
 }
 
 @Composable
