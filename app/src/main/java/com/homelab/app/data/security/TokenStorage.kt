@@ -1,11 +1,9 @@
 package com.homelab.app.data.security
 
-import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import java.time.Instant
@@ -17,11 +15,20 @@ class TokenStorage @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) {
     companion object {
-        private val ACCESS_TOKEN = stringPreferencesKey("access_token_enc")
-        private val REFRESH_TOKEN = stringPreferencesKey("refresh_token_enc")
-        private val EXPIRES_AT = stringPreferencesKey("expires_at")
-        private val TAILNET = stringPreferencesKey("tailnet")
+        private val ACCESS_TOKEN  = stringPreferencesKey("access_token")
+        private val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
+        private val EXPIRES_AT    = stringPreferencesKey("expires_at")
+        private val TAILNET       = stringPreferencesKey("tailnet")
+        // User-provided at onboarding — never comes from the build
+        val CLIENT_ID         = stringPreferencesKey("oauth_client_id")
     }
+
+    suspend fun saveClientId(clientId: String) {
+        dataStore.edit { it[CLIENT_ID] = clientId.trim() }
+    }
+
+    suspend fun getClientId(): String? =
+        dataStore.data.map { it[CLIENT_ID] }.firstOrNull()?.takeIf { it.isNotBlank() }
 
     suspend fun saveTokens(
         accessToken: String,
@@ -32,8 +39,8 @@ class TokenStorage @Inject constructor(
         dataStore.edit { prefs ->
             prefs[ACCESS_TOKEN] = accessToken
             refreshToken?.let { prefs[REFRESH_TOKEN] = it }
-            prefs[EXPIRES_AT] = expiresAt.toString()
-            prefs[TAILNET] = tailnet
+            prefs[EXPIRES_AT]   = expiresAt.toString()
+            prefs[TAILNET]      = tailnet
         }
     }
 
@@ -56,6 +63,16 @@ class TokenStorage @Inject constructor(
     }
 
     suspend fun clearTokens() {
+        dataStore.edit { prefs ->
+            prefs.remove(ACCESS_TOKEN)
+            prefs.remove(REFRESH_TOKEN)
+            prefs.remove(EXPIRES_AT)
+            prefs.remove(TAILNET)
+            // Intentionally keep CLIENT_ID so user doesn't have to re-enter it on next login
+        }
+    }
+
+    suspend fun clearAll() {
         dataStore.edit { it.clear() }
     }
 }

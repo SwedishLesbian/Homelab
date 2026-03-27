@@ -12,7 +12,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class OnboardingStep { CLIENT_ID, SIGN_IN }
+
 data class OnboardingState(
+    val step: OnboardingStep = OnboardingStep.CLIENT_ID,
+    val clientIdInput: String = "",
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
     val authIntent: Intent? = null,
@@ -29,19 +33,37 @@ class OnboardingViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            if (authRepository.isAuthenticated()) {
-                _state.update { it.copy(isAuthenticated = true) }
+            when {
+                authRepository.isAuthenticated() ->
+                    _state.update { it.copy(isAuthenticated = true) }
+                authRepository.hasClientId() ->
+                    _state.update { it.copy(step = OnboardingStep.SIGN_IN) }
             }
         }
     }
 
+    fun onClientIdChanged(value: String) {
+        _state.update { it.copy(clientIdInput = value, error = null) }
+    }
+
+    fun saveClientId() {
+        val id = _state.value.clientIdInput.trim()
+        if (id.isBlank()) {
+            _state.update { it.copy(error = "Please enter your OAuth client ID") }
+            return
+        }
+        viewModelScope.launch {
+            authRepository.saveClientId(id)
+            _state.update { it.copy(step = OnboardingStep.SIGN_IN, error = null) }
+        }
+    }
+
     fun startAuth() {
-        _state.update { it.copy(isLoading = true, error = null, authIntent = null) }
-        runCatching {
-            val intent = authRepository.buildAuthIntent()
-            _state.update { it.copy(authIntent = intent, isLoading = false) }
-        }.onFailure { e ->
-            _state.update { it.copy(isLoading = false, error = e.message ?: "Failed to start sign-in") }
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { authRepository.buildAuthIntent() }
+                .onSuccess { intent -> _state.update { it.copy(authIntent = intent, isLoading = false) } }
+                .onFailure { e  -> _state.update { it.copy(isLoading = false, error = e.message) } }
         }
     }
 
@@ -52,5 +74,9 @@ class OnboardingViewModel @Inject constructor(
                 .onSuccess { _state.update { it.copy(isAuthenticated = true, isLoading = false) } }
                 .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message ?: "Sign-in failed") } }
         }
+    }
+
+    fun goBackToClientId() {
+        _state.update { it.copy(step = OnboardingStep.CLIENT_ID, error = null) }
     }
 }

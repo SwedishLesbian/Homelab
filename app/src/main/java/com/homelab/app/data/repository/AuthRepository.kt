@@ -2,7 +2,6 @@ package com.homelab.app.data.repository
 
 import android.content.Context
 import android.content.Intent
-import com.homelab.app.BuildConfig
 import com.homelab.app.data.security.TokenStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import net.openid.appauth.*
@@ -19,21 +18,38 @@ class AuthRepository @Inject constructor(
     private val tokenStorage: TokenStorage
 ) {
     companion object {
-        private const val AUTH_ENDPOINT = "https://login.tailscale.com/oauth/authorize"
+        private const val AUTH_ENDPOINT  = "https://login.tailscale.com/oauth/authorize"
         private const val TOKEN_ENDPOINT = "https://login.tailscale.com/oauth/token"
-        private const val REDIRECT_URI = "com.homelab.app://oauth"
+        private const val REDIRECT_URI   = "com.homelab.app://oauth"
     }
 
     private val authService = AuthorizationService(context)
 
-    fun buildAuthIntent(): Intent {
+    /** Returns true only when both a client ID and a valid access token are present. */
+    suspend fun isAuthenticated(): Boolean =
+        tokenStorage.getClientId() != null && tokenStorage.getAccessToken() != null
+
+    /** Returns true when a client ID has been saved (user completed onboarding step 1). */
+    suspend fun hasClientId(): Boolean = tokenStorage.getClientId() != null
+
+    suspend fun saveClientId(clientId: String) = tokenStorage.saveClientId(clientId)
+
+    suspend fun getClientId(): String? = tokenStorage.getClientId()
+
+    /**
+     * Builds the OAuth PKCE intent using the client ID the user provided.
+     * Throws [IllegalStateException] if no client ID has been saved yet.
+     */
+    suspend fun buildAuthIntent(): Intent {
+        val clientId = tokenStorage.getClientId()
+            ?: throw IllegalStateException("No OAuth client ID set. Complete onboarding first.")
         val config = AuthorizationServiceConfiguration(
             android.net.Uri.parse(AUTH_ENDPOINT),
             android.net.Uri.parse(TOKEN_ENDPOINT)
         )
         val request = AuthorizationRequest.Builder(
             config,
-            BuildConfig.TAILSCALE_CLIENT_ID,
+            clientId,
             ResponseTypeValues.CODE,
             android.net.Uri.parse(REDIRECT_URI)
         )
@@ -59,14 +75,15 @@ class AuthRepository @Inject constructor(
     suspend fun refreshTokenIfNeeded(): Result<Unit> {
         if (!tokenStorage.isTokenExpired()) return Result.success(Unit)
         return runCatching {
-            // AppAuth token refresh — requires stored AuthState in production
+            val clientId = tokenStorage.getClientId()
+                ?: throw IllegalStateException("No client ID")
             val refreshToken = tokenStorage.getRefreshToken()
-                ?: throw IllegalStateException("No refresh token available")
+                ?: throw IllegalStateException("No refresh token")
             val config = AuthorizationServiceConfiguration(
                 android.net.Uri.parse(AUTH_ENDPOINT),
                 android.net.Uri.parse(TOKEN_ENDPOINT)
             )
-            val tokenRequest = TokenRequest.Builder(config, BuildConfig.TAILSCALE_CLIENT_ID)
+            val tokenRequest = TokenRequest.Builder(config, clientId)
                 .setGrantType(GrantTypeValues.REFRESH_TOKEN)
                 .setRefreshToken(refreshToken)
                 .build()
@@ -78,20 +95,18 @@ class AuthRepository @Inject constructor(
             }
             val tailnet = tokenStorage.getTailnet() ?: "-"
             tokenStorage.saveTokens(
-                accessToken = tokenResponse.accessToken ?: "",
+                accessToken  = tokenResponse.accessToken ?: "",
                 refreshToken = tokenResponse.refreshToken ?: refreshToken,
-                expiresAt = tokenResponse.accessTokenExpirationTime
+                expiresAt    = tokenResponse.accessTokenExpirationTime
                     ?.let { Instant.ofEpochMilli(it) } ?: Instant.now().plusSeconds(3600),
-                tailnet = tailnet
+                tailnet      = tailnet
             )
         }
     }
 
-    suspend fun isAuthenticated(): Boolean = tokenStorage.getAccessToken() != null
-
     suspend fun logout() {
         authService.dispose()
-        tokenStorage.clearTokens()
+        tokenStorage.clearTokens()   // keeps client ID so user skips step 1 next time
     }
 
     private suspend fun exchangeCode(response: AuthorizationResponse): TokenResponse =
