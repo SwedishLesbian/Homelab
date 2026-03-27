@@ -23,6 +23,7 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.homelab.app"
     }
 
     signingConfigs {
