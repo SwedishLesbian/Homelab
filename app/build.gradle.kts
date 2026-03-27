@@ -5,6 +5,23 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
+// Read TAILSCALE_CLIENT_ID from local.properties, Gradle property, or env var — in that order.
+val tailscaleClientId: String by lazy {
+    val fromProperties = project.findProperty("TAILSCALE_CLIENT_ID")?.toString()
+    val fromEnv = System.getenv("TAILSCALE_CLIENT_ID")
+    fromProperties ?: fromEnv ?: ""
+}
+
+// Read signing config from environment (CI) or local.properties
+val keystorePath: String? = project.findProperty("KEYSTORE_PATH")?.toString()
+    ?: System.getenv("KEYSTORE_PATH")
+val keystorePassword: String? = project.findProperty("KEYSTORE_PASSWORD")?.toString()
+    ?: System.getenv("KEYSTORE_PASSWORD")
+val keyAlias: String? = project.findProperty("KEY_ALIAS")?.toString()
+    ?: System.getenv("KEY_ALIAS")
+val keyPassword: String? = project.findProperty("KEY_PASSWORD")?.toString()
+    ?: System.getenv("KEY_PASSWORD")
+
 android {
     namespace = "com.homelab.app"
     compileSdk = 34
@@ -17,22 +34,34 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+    }
 
-        // Override in local.properties or CI env — never commit real values
-        buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"\"")
+    signingConfigs {
+        if (keystorePath != null && keystorePassword != null && keyAlias != null && keyPassword != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"$tailscaleClientId\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-        debug {
-            isDebuggable = true
-            applicationIdSuffix = ".debug"
-            buildConfigField("String", "TAILSCALE_CLIENT_ID",
-                "\"${project.findProperty("TAILSCALE_CLIENT_ID") ?: "\"}\"")
+            buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"$tailscaleClientId\"")
+            val releaseSigningConfig = signingConfigs.findByName("release")
+            if (releaseSigningConfig != null) {
+                signingConfig = releaseSigningConfig
+            }
         }
     }
 
