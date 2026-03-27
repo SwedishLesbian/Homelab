@@ -9,3 +9,6 @@
 -dontwarn net.i2p.crypto.**
 -dontwarn javax.naming.**
 -dontwarn org.slf4j.**
+# sshj GSSAPI/Kerberos auth - not used on Android, classes don't exist in Android SDK
+-dontwarn javax.security.auth.login.**
+-dontwarn org.ietf.jgss.**
