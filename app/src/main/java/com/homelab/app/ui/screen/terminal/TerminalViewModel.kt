@@ -17,10 +17,12 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import javax.inject.Inject
 
+private const val MAX_RECONNECT_ATTEMPTS = 5
+private val RECONNECT_DELAYS_MS = listOf(2_000L, 4_000L, 8_000L, 16_000L, 30_000L)
+
 data class TerminalState(
     val status: SessionStatus = SessionStatus.CONNECTING,
     val outputLines: List<androidx.compose.ui.text.AnnotatedString> = emptyList(),
-    val inputText: String = "",
     val hostName: String = "",
     val errorMessage: String? = null
 )
@@ -38,86 +40,109 @@ class TerminalViewModel @Inject constructor(
     private var sshSession: SshSession? = null
     private val emulator = TerminalEmulator()
     private var currentSessionId: String = ""
-    private var currentHostId: String = ""
+    private var cachedHost: Host? = null
+    private var cachedUsername: String = "root"
+    private var cachedKeyId: String? = null
 
     fun connect(sessionId: String, hostId: String) {
         currentSessionId = sessionId
-        currentHostId = hostId
         viewModelScope.launch {
-            val hostEntity = hostRepository.getAllHosts().firstOrNull()
-                ?.find { it.id == hostId } ?: return@launch
+            val host = hostRepository.getAllHosts().firstOrNull()?.find { it.id == hostId }
+                ?: return@launch
+            cachedHost = host
+            cachedUsername = host.sshUsername ?: "root"
+            cachedKeyId = host.sshKeyId
+            _state.update { it.copy(hostName = host.name) }
+            doConnect(host, attempt = 0)
+        }
+    }
 
-            _state.update { it.copy(status = SessionStatus.CONNECTING, hostName = hostEntity.name) }
+    private suspend fun doConnect(host: Host, attempt: Int) {
+        val keyId = cachedKeyId
+        if (keyId == null) {
+            _state.update {
+                it.copy(
+                    status = SessionStatus.FAILED,
+                    errorMessage = "No SSH key configured for this host. Assign one in host settings."
+                )
+            }
+            return
+        }
 
-            saveSession(sessionId, hostEntity, SessionStatus.CONNECTING)
+        _state.update {
+            it.copy(
+                status = if (attempt == 0) SessionStatus.CONNECTING else SessionStatus.RECONNECTING,
+                errorMessage = null
+            )
+        }
+        saveSession(host, if (attempt == 0) SessionStatus.CONNECTING else SessionStatus.RECONNECTING)
 
-            val username = hostEntity.sshUsername ?: "root"
-            val keyId = hostEntity.sshKeyId
-
-            if (keyId == null) {
+        sshManager.connect(
+            sessionId = currentSessionId,
+            host = host,
+            username = cachedUsername,
+            keyId = keyId,
+            onHostKeyVerification = { true }
+        ).onSuccess { session ->
+            sshSession = session
+            _state.update { it.copy(status = SessionStatus.CONNECTED) }
+            saveSession(host, SessionStatus.CONNECTED)
+            hostRepository.updateLastConnected(host.id)
+            collectOutputAndReconnect(host, session)
+        }.onFailure { e ->
+            if (attempt < MAX_RECONNECT_ATTEMPTS) {
+                val delayMs = RECONNECT_DELAYS_MS[attempt.coerceAtMost(RECONNECT_DELAYS_MS.lastIndex)]
                 _state.update {
                     it.copy(
-                        status = SessionStatus.FAILED,
-                        errorMessage = "No SSH key configured. Set one up in host settings."
+                        status = SessionStatus.RECONNECTING,
+                        errorMessage = "Retrying in ${delayMs / 1000}s… (${e.message})"
                     )
                 }
-                return@launch
-            }
-
-            sshManager.connect(
-                sessionId = sessionId,
-                host = hostEntity,
-                username = username,
-                keyId = keyId,
-                onHostKeyVerification = { true }
-            ).onSuccess { session ->
-                sshSession = session
-                _state.update { it.copy(status = SessionStatus.CONNECTED) }
-                saveSession(sessionId, hostEntity, SessionStatus.CONNECTED)
-                hostRepository.updateLastConnected(hostId)
-                collectOutput(session)
-            }.onFailure { e ->
+                delay(delayMs)
+                doConnect(host, attempt + 1)
+            } else {
                 _state.update {
                     it.copy(
                         status = SessionStatus.FAILED,
                         errorMessage = e.message ?: "Connection failed"
                     )
                 }
-                saveSession(sessionId, hostEntity, SessionStatus.FAILED)
+                saveSession(host, SessionStatus.FAILED)
             }
         }
     }
 
-    private fun collectOutput(session: SshSession) {
+    private fun collectOutputAndReconnect(host: Host, session: SshSession) {
         viewModelScope.launch {
             session.outputFlow.collect { chunk ->
                 emulator.process(chunk)
                 _state.update { it.copy(outputLines = emulator.getCurrentContent()) }
             }
-            // Flow ended = disconnected
-            _state.update { it.copy(status = SessionStatus.DISCONNECTED) }
+            // Flow ended means the connection dropped
+            if (_state.value.status == SessionStatus.CONNECTED) {
+                // Auto-reconnect with exponential backoff
+                doConnect(host, attempt = 0)
+            }
         }
     }
 
     fun sendInput(input: String) {
-        viewModelScope.launch {
-            sshSession?.sendInput(input)
-        }
+        viewModelScope.launch { sshSession?.sendInput(input) }
     }
 
     fun sendSpecialKey(key: SpecialKey) {
-        val sequence = when (key) {
+        val seq = when (key) {
             SpecialKey.CTRL_C -> "\u0003"
             SpecialKey.CTRL_D -> "\u0004"
             SpecialKey.CTRL_Z -> "\u001A"
-            SpecialKey.TAB -> "\t"
+            SpecialKey.TAB    -> "\t"
             SpecialKey.ESCAPE -> "\u001B"
-            SpecialKey.UP -> "\u001B[A"
-            SpecialKey.DOWN -> "\u001B[B"
-            SpecialKey.LEFT -> "\u001B[D"
-            SpecialKey.RIGHT -> "\u001B[C"
+            SpecialKey.UP     -> "\u001B[A"
+            SpecialKey.DOWN   -> "\u001B[B"
+            SpecialKey.LEFT   -> "\u001B[D"
+            SpecialKey.RIGHT  -> "\u001B[C"
         }
-        viewModelScope.launch { sshSession?.sendInput(sequence) }
+        viewModelScope.launch { sshSession?.sendInput(seq) }
     }
 
     fun onTerminalResize(cols: Int, rows: Int) {
@@ -131,11 +156,15 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
-    private suspend fun saveSession(id: String, host: Host, status: SessionStatus) {
+    private suspend fun saveSession(host: Host, status: SessionStatus) {
         sessionRepository.saveSession(
             Session(
-                id = id, hostId = host.id, hostName = host.name, hostIp = host.ip,
-                username = host.sshUsername ?: "root", status = status,
+                id = currentSessionId,
+                hostId = host.id,
+                hostName = host.name,
+                hostIp = host.ip,
+                username = cachedUsername,
+                status = status,
                 lastActive = Instant.now()
             )
         )
