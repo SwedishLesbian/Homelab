@@ -2,6 +2,7 @@ package com.homelab.app.data.repository
 
 import android.content.Context
 import android.content.Intent
+import com.homelab.app.BuildConfig
 import com.homelab.app.data.security.TokenStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import net.openid.appauth.*
@@ -20,7 +21,6 @@ class AuthRepository @Inject constructor(
     companion object {
         private const val AUTH_ENDPOINT = "https://login.tailscale.com/oauth/authorize"
         private const val TOKEN_ENDPOINT = "https://login.tailscale.com/oauth/token"
-        private const val CLIENT_ID = BuildConfig.TAILSCALE_CLIENT_ID
         private const val REDIRECT_URI = "com.homelab.app://oauth"
     }
 
@@ -33,7 +33,7 @@ class AuthRepository @Inject constructor(
         )
         val request = AuthorizationRequest.Builder(
             config,
-            CLIENT_ID,
+            BuildConfig.TAILSCALE_CLIENT_ID,
             ResponseTypeValues.CODE,
             android.net.Uri.parse(REDIRECT_URI)
         )
@@ -59,36 +59,52 @@ class AuthRepository @Inject constructor(
     suspend fun refreshTokenIfNeeded(): Result<Unit> {
         if (!tokenStorage.isTokenExpired()) return Result.success(Unit)
         return runCatching {
+            // AppAuth token refresh — requires stored AuthState in production
             val refreshToken = tokenStorage.getRefreshToken()
-                ?: throw IllegalStateException("No refresh token")
-            // Perform token refresh via AppAuth
+                ?: throw IllegalStateException("No refresh token available")
+            val config = AuthorizationServiceConfiguration(
+                android.net.Uri.parse(AUTH_ENDPOINT),
+                android.net.Uri.parse(TOKEN_ENDPOINT)
+            )
+            val tokenRequest = TokenRequest.Builder(config, BuildConfig.TAILSCALE_CLIENT_ID)
+                .setGrantType(GrantTypeValues.REFRESH_TOKEN)
+                .setRefreshToken(refreshToken)
+                .build()
+            val tokenResponse = suspendCoroutine { cont ->
+                authService.performTokenRequest(tokenRequest) { resp, ex ->
+                    if (resp != null) cont.resume(resp)
+                    else cont.resumeWithException(ex ?: RuntimeException("Refresh failed"))
+                }
+            }
+            val tailnet = tokenStorage.getTailnet() ?: "-"
+            tokenStorage.saveTokens(
+                accessToken = tokenResponse.accessToken ?: "",
+                refreshToken = tokenResponse.refreshToken ?: refreshToken,
+                expiresAt = tokenResponse.accessTokenExpirationTime
+                    ?.let { Instant.ofEpochMilli(it) } ?: Instant.now().plusSeconds(3600),
+                tailnet = tailnet
+            )
         }
     }
 
     suspend fun isAuthenticated(): Boolean = tokenStorage.getAccessToken() != null
 
-    suspend fun logout() = tokenStorage.clearTokens()
+    suspend fun logout() {
+        authService.dispose()
+        tokenStorage.clearTokens()
+    }
 
     private suspend fun exchangeCode(response: AuthorizationResponse): TokenResponse =
         suspendCoroutine { cont ->
-            authService.performTokenRequest(response.createTokenExchangeRequest()) { tokenResp, ex ->
-                if (tokenResp != null) cont.resume(tokenResp)
+            authService.performTokenRequest(response.createTokenExchangeRequest()) { resp, ex ->
+                if (resp != null) cont.resume(resp)
                 else cont.resumeWithException(ex ?: RuntimeException("Token exchange failed"))
             }
         }
 
-    private fun extractTailnet(token: String): String {
-        // JWT middle part contains tailnet claim; fallback to "-"
-        return runCatching {
-            val payload = token.split(".")[1]
-            val decoded = String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE))
-            val json = org.json.JSONObject(decoded)
-            json.optString("tailnet", "-")
-        }.getOrDefault("-")
-    }
-}
-
-// Placeholder for BuildConfig — generated at compile time
-private object BuildConfig {
-    const val TAILSCALE_CLIENT_ID = ""
+    private fun extractTailnet(token: String): String = runCatching {
+        val payload = token.split(".")[1]
+        val decoded = String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE))
+        org.json.JSONObject(decoded).optString("tailnet", "-")
+    }.getOrDefault("-")
 }
