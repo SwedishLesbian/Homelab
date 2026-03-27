@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.homelab.app.data.model.SshKey
 import com.homelab.app.ui.util.copyAndScheduleClear
-import kotlinx.coroutines.rememberCoroutineScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -153,7 +152,7 @@ private fun SshKeyCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(key.name, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "${key.keyType.name} • ${key.publicKey.take(28)}…",
+                    "${key.keyType.name} \u2022 ${key.publicKey.take(28)}\u2026",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )

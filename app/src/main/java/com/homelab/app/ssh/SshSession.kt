@@ -26,7 +26,7 @@ class SshSession(
 
     fun open() {
         sshSession = client.startSession()
-        sshSession?.allocatePTY("xterm-256color", 220, 50, 0, 0)
+        sshSession?.allocatePTY("xterm-256color", 220, 50, 0, 0, emptyMap())
         shell = sshSession?.startShell()
         outputStream = shell?.outputStream
         startReadingOutput(shell?.inputStream)
