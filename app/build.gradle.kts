@@ -61,7 +61,13 @@ android {
         buildConfig = true
     }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.13" }
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // sshj brings bcprov-jdk18on; exclude duplicate BC class files
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
+    }
 }
 
 dependencies {
@@ -78,6 +84,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    // Required for Theme.Material3.* XML themes used in AndroidManifest / themes.xml
+    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("com.google.dagger:hilt-android:2.51.1")
     kapt("com.google.dagger:hilt-android-compiler:2.51.1")
@@ -93,8 +101,8 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
+    // sshj manages its own BouncyCastle (bcprov-jdk18on) transitively
     implementation("com.hierynomus:sshj:0.38.0")
-    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
     implementation("net.openid:appauth:0.11.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.biometric:biometric:1.1.0")
