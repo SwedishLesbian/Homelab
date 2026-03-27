@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Homelab" parent="Theme.Material3.Dark.NoActionBar" />
+    <style name="Theme.Homelab.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0D1117</item>
+        <item name="windowSplashScreenAnimatedIcon">@android:drawable/ic_dialog_info</item>
+        <item name="postSplashScreenTheme">@style/Theme.Homelab</item>
+    </style>
+</resources>
