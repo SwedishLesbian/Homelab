@@ -5,22 +5,11 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
-// Read TAILSCALE_CLIENT_ID from local.properties, Gradle property, or env var — in that order.
-val tailscaleClientId: String by lazy {
-    val fromProperties = project.findProperty("TAILSCALE_CLIENT_ID")?.toString()
-    val fromEnv = System.getenv("TAILSCALE_CLIENT_ID")
-    fromProperties ?: fromEnv ?: ""
-}
-
-// Read signing config from environment (CI) or local.properties
-val keystorePath: String? = project.findProperty("KEYSTORE_PATH")?.toString()
-    ?: System.getenv("KEYSTORE_PATH")
-val keystorePassword: String? = project.findProperty("KEYSTORE_PASSWORD")?.toString()
-    ?: System.getenv("KEYSTORE_PASSWORD")
-val keyAlias: String? = project.findProperty("KEY_ALIAS")?.toString()
-    ?: System.getenv("KEY_ALIAS")
-val keyPassword: String? = project.findProperty("KEY_PASSWORD")?.toString()
-    ?: System.getenv("KEY_PASSWORD")
+// Signing config — only wired when all four env vars are present (CI release builds)
+val keystorePath     = System.getenv("KEYSTORE_PATH")
+val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+val keyAlias         = System.getenv("KEY_ALIAS")
+val keyPassword      = System.getenv("KEY_PASSWORD")
 
 android {
     namespace = "com.homelab.app"
@@ -39,7 +28,7 @@ android {
     signingConfigs {
         if (keystorePath != null && keystorePassword != null && keyAlias != null && keyPassword != null) {
             create("release") {
-                storeFile = file(keystorePath)
+                storeFile     = file(keystorePath)
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
@@ -51,17 +40,13 @@ android {
         debug {
             isDebuggable = true
             applicationIdSuffix = ".debug"
-            buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"$tailscaleClientId\"")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            buildConfigField("String", "TAILSCALE_CLIENT_ID", "\"$tailscaleClientId\"")
             val releaseSigningConfig = signingConfigs.findByName("release")
-            if (releaseSigningConfig != null) {
-                signingConfig = releaseSigningConfig
-            }
+            if (releaseSigningConfig != null) signingConfig = releaseSigningConfig
         }
     }
 
@@ -81,63 +66,39 @@ android {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.04.00")
     implementation(composeBom)
-
-    // Core
     implementation("androidx.core:core-ktx:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
-
-    // Compose
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-
-    // Hilt
     implementation("com.google.dagger:hilt-android:2.51.1")
     kapt("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
     kapt("androidx.hilt:hilt-compiler:1.2.0")
-
-    // Room
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
-
-    // Networking
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
-
-    // SSH
     implementation("com.hierynomus:sshj:0.38.0")
     implementation("org.bouncycastle:bcprov-jdk15on:1.70")
-
-    // Auth (OAuth PKCE)
     implementation("net.openid:appauth:0.11.1")
-
-    // Security & Biometric
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.biometric:biometric:1.1.0")
-
-    // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-
-    // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.0")
-
-    // Splash screen
     implementation("androidx.core:core-splashscreen:1.0.1")
-
-    // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
