@@ -1,6 +1,11 @@
 # Add project specific ProGuard rules here.
 -keep class com.homelab.app.data.remote.dto.** { *; }
 -keep class net.schmizz.** { *; }
+-keep class net.i2p.crypto.** { *; }
+-keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+-dontwarn net.i2p.crypto.**
+-dontwarn javax.naming.**
+-dontwarn org.slf4j.**

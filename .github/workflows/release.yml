@@ -48,7 +48,19 @@ jobs:
           fi
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          ./gradlew assembleRelease --no-daemon 2>&1 | tee /tmp/build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo '## Build Failure' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E 'error:|Duplicate class|FAILED|Exception|> Task' /tmp/build.log | tail -60 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E 'error:|Duplicate class' /tmp/build.log | head -30 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          fi
+          exit $BUILD_EXIT
 
       - name: Rename APK
         run: |
