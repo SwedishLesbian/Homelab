@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Homelab app icon foreground — house shape containing server racks.
+    Designed for 108×108dp adaptive-icon viewport; safe zone is 72×72dp
+    (18dp inset on each side). All content kept within the safe zone.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ── House silhouette (filled dark so racks read against it) ── -->
+    <path
+        android:pathData="M54,19 L91,51 L91,89 L17,89 L17,51 Z"
+        android:fillColor="#0A1628" />
+
+    <!-- ── House outline (cyan glow) ── -->
+    <path
+        android:pathData="M54,19 L91,51 L91,89 L17,89 L17,51 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="2.5"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+
+    <!-- ── Antenna post (right side, above eave) ── -->
+    <path
+        android:pathData="M76,51 L76,33"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Antenna – outer signal arc (curves above tip) -->
+    <path
+        android:pathData="M69,38 A9,9 0 0,1 83,38"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+
+    <!-- Antenna – inner signal arc -->
+    <path
+        android:pathData="M72,41 A5.5,5.5 0 0,1 80,41"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+
+    <!-- Antenna dot -->
+    <path
+        android:pathData="M76,33 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"
+        android:fillColor="#00D4E8" />
+
+    <!-- ── Server rack 1 (top) ── -->
+    <path
+        android:pathData="M23,55 L85,55 L85,63 L23,63 Z"
+        android:fillColor="#0D2035"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1.5" />
+    <!-- Rack 1 – left indicator block -->
+    <path
+        android:pathData="M26,57.5 L31,57.5 L31,60.5 L26,60.5 Z"
+        android:fillColor="#00D4E8" />
+    <!-- Rack 1 – label bar -->
+    <path
+        android:pathData="M34,58.5 L55,58.5 L55,60.5 L34,60.5 Z"
+        android:fillColor="#00D4E8"
+        android:fillAlpha="0.5" />
+    <!-- Rack 1 – wifi icon -->
+    <path
+        android:pathData="M73,58 A5,5 0 0,1 81,58"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M75.5,60 A2,2 0 0,1 78.5,60"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+
+    <!-- ── Server rack 2 (middle) ── -->
+    <path
+        android:pathData="M23,66 L85,66 L85,74 L23,74 Z"
+        android:fillColor="#0D2035"
+        android:strokeColor="#5BB8CC"
+        android:strokeWidth="1.5" />
+    <!-- Rack 2 – left indicator block -->
+    <path
+        android:pathData="M26,68.5 L31,68.5 L31,71.5 L26,71.5 Z"
+        android:fillColor="#5BB8CC" />
+    <!-- Rack 2 – label bar -->
+    <path
+        android:pathData="M34,69.5 L48,69.5 L48,71.5 L34,71.5 Z"
+        android:fillColor="#5BB8CC"
+        android:fillAlpha="0.5" />
+    <!-- Rack 2 – wifi icon -->
+    <path
+        android:pathData="M73,69 A5,5 0 0,1 81,69"
+        android:fillColor="#00000000"
+        android:strokeColor="#5BB8CC"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M75.5,71 A2,2 0 0,1 78.5,71"
+        android:fillColor="#00000000"
+        android:strokeColor="#5BB8CC"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+
+    <!-- ── Server rack 3 (bottom) ── -->
+    <path
+        android:pathData="M23,77 L85,77 L85,85 L23,85 Z"
+        android:fillColor="#0D2035"
+        android:strokeColor="#3A99AD"
+        android:strokeWidth="1.5" />
+    <!-- Rack 3 – left indicator block -->
+    <path
+        android:pathData="M26,79.5 L31,79.5 L31,82.5 L26,82.5 Z"
+        android:fillColor="#3A99AD" />
+    <!-- Rack 3 – label bar -->
+    <path
+        android:pathData="M34,80.5 L44,80.5 L44,82.5 L34,82.5 Z"
+        android:fillColor="#3A99AD"
+        android:fillAlpha="0.5" />
+
+    <!-- ── Green status LEDs at base ── -->
+    <path
+        android:pathData="M35,87 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+        android:fillColor="#00D084" />
+    <path
+        android:pathData="M45,87 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+        android:fillColor="#00D084" />
+    <path
+        android:pathData="M55,87 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+        android:fillColor="#00D084" />
+    <path
+        android:pathData="M65,87 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+        android:fillColor="#00D084" />
+
+    <!-- ── Circuit board traces (left side of roof) ── -->
+    <path
+        android:pathData="M28,51 L28,43 L35,43"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.6" />
+    <path
+        android:pathData="M35,43 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"
+        android:fillColor="#00D4E8"
+        android:fillAlpha="0.6" />
+
+    <path
+        android:pathData="M36,51 L36,39 L43,39"
+        android:fillColor="#00000000"
+        android:strokeColor="#00D4E8"
+        android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.4" />
+    <path
+        android:pathData="M43,39 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0"
+        android:fillColor="#00D4E8"
+        android:fillAlpha="0.4" />
+
+</vector>

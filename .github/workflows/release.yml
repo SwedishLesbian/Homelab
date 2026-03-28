@@ -34,7 +34,7 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Configure signing (optional)
+      - name: Configure signing
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
           _KP: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -47,6 +47,20 @@ jobs:
             echo "KEYSTORE_PASSWORD=$_KP"            >> $GITHUB_ENV
             echo "KEY_ALIAS=$_KA"                   >> $GITHUB_ENV
             echo "KEY_PASSWORD=$_KPW"               >> $GITHUB_ENV
+          else
+            # No keystore secret — generate a self-signed key so the APK is installable.
+            # Note: each build generates a fresh key, so updating the app requires
+            # uninstalling first. Add KEYSTORE_BASE64 secret for a stable key.
+            keytool -genkeypair -v \
+              -keystore app/homelab-release.jks \
+              -alias homelab \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass homelab123 -keypass homelab123 \
+              -dname "CN=Homelab,O=Homelab,C=US" 2>/dev/null
+            echo "KEYSTORE_PATH=homelab-release.jks" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=homelab123"       >> $GITHUB_ENV
+            echo "KEY_ALIAS=homelab"                  >> $GITHUB_ENV
+            echo "KEY_PASSWORD=homelab123"            >> $GITHUB_ENV
           fi
 
       - name: Build release APK
