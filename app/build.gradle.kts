@@ -5,12 +5,6 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
-// Signing config — only wired when all four env vars are present (CI release builds)
-val keystorePath     = System.getenv("KEYSTORE_PATH")
-val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
-val keyAlias         = System.getenv("KEY_ALIAS")
-val keyPassword      = System.getenv("KEY_PASSWORD")
-
 android {
     namespace = "com.homelab.app"
     compileSdk = 34
@@ -26,17 +20,6 @@ android {
         manifestPlaceholders["appAuthRedirectScheme"] = "com.homelab.app"
     }
 
-    signingConfigs {
-        if (keystorePath != null && keystorePassword != null && keyAlias != null && keyPassword != null) {
-            create("release") {
-                storeFile     = file(keystorePath)
-                storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
-            }
-        }
-    }
-
     buildTypes {
         debug {
             isDebuggable = true
@@ -46,8 +29,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            val releaseSigningConfig = signingConfigs.findByName("release")
-            if (releaseSigningConfig != null) signingConfig = releaseSigningConfig
+            // Signing is injected via android.injected.signing.* Gradle properties in CI.
+            // For local release builds, run with -Pandroid.injected.signing.store.file=...
         }
     }
 

@@ -34,7 +34,7 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Configure signing
+      - name: Prepare signing keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
           _KP: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -42,33 +42,37 @@ jobs:
           _KPW: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > app/homelab-release.jks
-            echo "KEYSTORE_PATH=homelab-release.jks" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=$_KP"            >> $GITHUB_ENV
-            echo "KEY_ALIAS=$_KA"                   >> $GITHUB_ENV
-            echo "KEY_PASSWORD=$_KPW"               >> $GITHUB_ENV
+            echo "$KEYSTORE_B64" | base64 --decode > /tmp/release.jks
+            echo "KS_PATH=/tmp/release.jks" >> $GITHUB_ENV
+            echo "KS_PASS=$_KP"             >> $GITHUB_ENV
+            echo "KS_ALIAS=$_KA"            >> $GITHUB_ENV
+            echo "KS_KEY_PASS=$_KPW"        >> $GITHUB_ENV
           else
             # No keystore secret — generate a self-signed key so the APK is installable.
-            # Note: each build generates a fresh key, so updating the app requires
-            # uninstalling first. Add KEYSTORE_BASE64 secret for a stable key.
+            # Each build gets a fresh key; add KEYSTORE_BASE64 secret for stable OTA updates.
             keytool -genkeypair -v \
-              -keystore app/homelab-release.jks \
+              -keystore /tmp/release.jks \
               -alias homelab \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass homelab123 -keypass homelab123 \
-              -dname "CN=Homelab,O=Homelab,C=US" 2>/dev/null
-            echo "KEYSTORE_PATH=homelab-release.jks" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=homelab123"       >> $GITHUB_ENV
-            echo "KEY_ALIAS=homelab"                  >> $GITHUB_ENV
-            echo "KEY_PASSWORD=homelab123"            >> $GITHUB_ENV
+              -dname "CN=Homelab,O=Homelab,C=US"
+            echo "KS_PATH=/tmp/release.jks" >> $GITHUB_ENV
+            echo "KS_PASS=homelab123"        >> $GITHUB_ENV
+            echo "KS_ALIAS=homelab"          >> $GITHUB_ENV
+            echo "KS_KEY_PASS=homelab123"    >> $GITHUB_ENV
           fi
 
-      - name: Build release APK
+      - name: Build signed release APK
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e +o pipefail
-          ./gradlew assembleRelease --no-daemon 2>&1 | tee /tmp/build.log
+          ./gradlew assembleRelease --no-daemon \
+            "-Pandroid.injected.signing.store.file=$KS_PATH" \
+            "-Pandroid.injected.signing.store.password=$KS_PASS" \
+            "-Pandroid.injected.signing.key.alias=$KS_ALIAS" \
+            "-Pandroid.injected.signing.key.password=$KS_KEY_PASS" \
+            2>&1 | tee /tmp/build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           if [ "$BUILD_EXIT" != "0" ]; then
             LOG_TAIL=$(tail -120 /tmp/build.log)
@@ -83,7 +87,7 @@ jobs:
 
       - name: Rename APK
         run: |
-          mv app/build/outputs/apk/release/app-release*.apk \
+          mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/Homelab-${{ github.ref_name }}.apk
 
       - name: Create or update GitHub Release

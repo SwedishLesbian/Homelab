@@ -11,57 +11,9 @@ permissions:
   checks: write
 
 jobs:
-  build:
-    name: Build debug APK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.6'
-
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version=8.6 --distribution-type=bin
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      - name: Build debug APK
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set +e +o pipefail
-          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
-          BUILD_EXIT=${PIPESTATUS[0]}
-          if [ "$BUILD_EXIT" != "0" ]; then
-            LOG_TAIL=$(tail -120 /tmp/build.log)
-            SUMMARY=$(python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" <<< "$LOG_TAIL")
-            curl -s -X POST \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/check-runs" \
-              -d "{\"name\":\"Build Debug Error Log\",\"head_sha\":\"$GITHUB_SHA\",\"status\":\"completed\",\"conclusion\":\"failure\",\"output\":{\"title\":\"Gradle Build Error\",\"summary\":$SUMMARY}}"
-          fi
-          exit "$BUILD_EXIT"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: homelab-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
-
   release:
     name: Build release APK
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
@@ -81,21 +33,6 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
-
-      - name: Configure signing (optional)
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
-          _KP: ${{ secrets.KEYSTORE_PASSWORD }}
-          _KA: ${{ secrets.KEY_ALIAS }}
-          _KPW: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > app/homelab-release.jks
-            echo "KEYSTORE_PATH=homelab-release.jks" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=$_KP"            >> $GITHUB_ENV
-            echo "KEY_ALIAS=$_KA"                   >> $GITHUB_ENV
-            echo "KEY_PASSWORD=$_KPW"               >> $GITHUB_ENV
-          fi
 
       - name: Build release APK
         env:
@@ -114,9 +51,3 @@ jobs:
               -d "{\"name\":\"Build Release Error Log\",\"head_sha\":\"$GITHUB_SHA\",\"status\":\"completed\",\"conclusion\":\"failure\",\"output\":{\"title\":\"Gradle Build Error\",\"summary\":$SUMMARY}}"
           fi
           exit "$BUILD_EXIT"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: homelab-release-${{ github.sha }}
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 90
