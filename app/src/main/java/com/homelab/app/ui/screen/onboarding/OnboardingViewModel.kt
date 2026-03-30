@@ -11,10 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class OnboardingStep { CLIENT_ID, CLIENT_SECRET }
-
 data class OnboardingState(
-    val step: OnboardingStep = OnboardingStep.CLIENT_ID,
     val clientIdInput: String = "",
     val clientSecretInput: String = "",
     val isLoading: Boolean = false,
@@ -32,11 +29,8 @@ class OnboardingViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            when {
-                authRepository.isAuthenticated() ->
-                    _state.update { it.copy(isAuthenticated = true) }
-                authRepository.hasClientId() ->
-                    _state.update { it.copy(step = OnboardingStep.CLIENT_SECRET) }
+            if (authRepository.isAuthenticated()) {
+                _state.update { it.copy(isAuthenticated = true) }
             }
         }
     }
@@ -49,38 +43,22 @@ class OnboardingViewModel @Inject constructor(
         _state.update { it.copy(clientSecretInput = value, error = null) }
     }
 
-    fun saveClientId() {
-        val id = _state.value.clientIdInput.trim()
-        if (id.isBlank()) {
-            _state.update { it.copy(error = "Please enter your OAuth client ID") }
-            return
-        }
-        viewModelScope.launch {
-            authRepository.saveClientId(id)
-            _state.update { it.copy(step = OnboardingStep.CLIENT_SECRET, error = null) }
-        }
-    }
-
     fun connect() {
+        val id = _state.value.clientIdInput.trim()
         val secret = _state.value.clientSecretInput.trim()
-        if (secret.isBlank()) {
-            _state.update { it.copy(error = "Please enter your OAuth client secret") }
+        if (id.isBlank() || secret.isBlank()) {
+            _state.update { it.copy(error = "Please enter both your client ID and secret") }
             return
         }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
+            authRepository.saveClientId(id)
             authRepository.saveClientSecret(secret)
             authRepository.authenticate()
                 .onSuccess { _state.update { it.copy(isAuthenticated = true, isLoading = false) } }
                 .onFailure { e ->
-                    _state.update {
-                        it.copy(isLoading = false, error = e.message ?: "Connection failed")
-                    }
+                    _state.update { it.copy(isLoading = false, error = e.message ?: "Connection failed") }
                 }
         }
-    }
-
-    fun goBackToClientId() {
-        _state.update { it.copy(step = OnboardingStep.CLIENT_ID, error = null) }
     }
 }
