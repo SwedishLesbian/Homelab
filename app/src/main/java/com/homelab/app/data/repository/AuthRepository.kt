@@ -3,7 +3,7 @@ package com.homelab.app.data.repository
 import com.homelab.app.data.security.TokenStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
+import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -17,7 +17,10 @@ class AuthRepository @Inject constructor(
     private val tokenStorage: TokenStorage
 ) {
     companion object {
-        private const val TOKEN_ENDPOINT = "https://login.tailscale.com/oauth/token"
+        // login.tailscale.com/oauth/token is the browser-facing authorization-code endpoint
+        // and enforces Sec-Fetch-Site CSRF headers. The correct client-credentials endpoint
+        // is on api.tailscale.com and uses HTTP Basic auth.
+        private const val TOKEN_ENDPOINT = "https://api.tailscale.com/api/v2/oauth/token"
     }
 
     // Plain client — no AuthInterceptor to avoid circular dependency
@@ -66,14 +69,14 @@ class AuthRepository @Inject constructor(
 
     private suspend fun fetchAndSaveToken(clientId: String, clientSecret: String) =
         withContext(Dispatchers.IO) {
-            val body = FormBody.Builder()
+            // Tailscale expects client credentials via HTTP Basic auth, not in the body
+            val body = okhttp3.FormBody.Builder()
                 .add("grant_type", "client_credentials")
-                .add("client_id", clientId)
-                .add("client_secret", clientSecret)
                 .build()
             val request = Request.Builder()
                 .url(TOKEN_ENDPOINT)
                 .post(body)
+                .header("Authorization", Credentials.basic(clientId, clientSecret))
                 .build()
 
             val response = httpClient.newCall(request).execute()
