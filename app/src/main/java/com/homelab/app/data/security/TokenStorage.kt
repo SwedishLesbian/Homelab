@@ -21,6 +21,7 @@ class TokenStorage @Inject constructor(
         private val TAILNET       = stringPreferencesKey("tailnet")
         // User-provided at onboarding — never comes from the build
         val CLIENT_ID         = stringPreferencesKey("oauth_client_id")
+        val CLIENT_SECRET     = stringPreferencesKey("oauth_client_secret")
     }
 
     suspend fun saveClientId(clientId: String) {
@@ -29,6 +30,13 @@ class TokenStorage @Inject constructor(
 
     suspend fun getClientId(): String? =
         dataStore.data.map { it[CLIENT_ID] }.firstOrNull()?.takeIf { it.isNotBlank() }
+
+    suspend fun saveClientSecret(clientSecret: String) {
+        dataStore.edit { it[CLIENT_SECRET] = clientSecret.trim() }
+    }
+
+    suspend fun getClientSecret(): String? =
+        dataStore.data.map { it[CLIENT_SECRET] }.firstOrNull()?.takeIf { it.isNotBlank() }
 
     suspend fun saveTokens(
         accessToken: String,

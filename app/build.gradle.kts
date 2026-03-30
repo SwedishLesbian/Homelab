@@ -17,7 +17,6 @@ android {
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.homelab.app"
     }
 
     buildTypes {
@@ -86,7 +85,6 @@ dependencies {
     kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
     // sshj manages its own BouncyCastle (bcprov-jdk18on) transitively
     implementation("com.hierynomus:sshj:0.38.0")
-    implementation("net.openid:appauth:0.11.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")

@@ -1,125 +1,101 @@
 package com.homelab.app.data.repository
 
-import android.content.Context
-import android.content.Intent
 import com.homelab.app.data.security.TokenStorage
-import dagger.hilt.android.qualifiers.ApplicationContext
-import net.openid.appauth.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.IOException
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 @Singleton
 class AuthRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val tokenStorage: TokenStorage
 ) {
     companion object {
-        private const val AUTH_ENDPOINT  = "https://login.tailscale.com/oauth/authorize"
         private const val TOKEN_ENDPOINT = "https://login.tailscale.com/oauth/token"
-        private const val REDIRECT_URI   = "com.homelab.app://oauth"
     }
 
-    private val authService = AuthorizationService(context)
+    // Plain client — no AuthInterceptor to avoid circular dependency
+    private val httpClient = OkHttpClient()
 
-    /** Returns true only when both a client ID and a valid access token are present. */
-    suspend fun isAuthenticated(): Boolean =
-        tokenStorage.getClientId() != null && tokenStorage.getAccessToken() != null
+    /** True when a non-expired access token is present (re-authenticates automatically if expired). */
+    suspend fun isAuthenticated(): Boolean {
+        val hasCredentials = tokenStorage.getClientId() != null &&
+                tokenStorage.getClientSecret() != null
+        if (!hasCredentials) return false
+        if (tokenStorage.isTokenExpired()) return refreshTokenIfNeeded().isSuccess
+        return tokenStorage.getAccessToken() != null
+    }
 
-    /** Returns true when a client ID has been saved (user completed onboarding step 1). */
+    /** True when the user has completed onboarding (both client ID and secret saved). */
+    suspend fun hasCredentials(): Boolean =
+        tokenStorage.getClientId() != null && tokenStorage.getClientSecret() != null
+
+    /** True when the user has at least entered their client ID (step 1 complete). */
     suspend fun hasClientId(): Boolean = tokenStorage.getClientId() != null
 
     suspend fun saveClientId(clientId: String) = tokenStorage.saveClientId(clientId)
-
+    suspend fun saveClientSecret(clientSecret: String) = tokenStorage.saveClientSecret(clientSecret)
     suspend fun getClientId(): String? = tokenStorage.getClientId()
 
     /**
-     * Builds the OAuth PKCE intent using the client ID the user provided.
-     * Throws [IllegalStateException] if no client ID has been saved yet.
+     * Authenticates using the OAuth 2.0 client credentials grant.
+     * Tailscale does not support the authorization code / PKCE flow for third-party apps;
+     * client credentials (client ID + secret → access token) is the correct mechanism.
      */
-    suspend fun buildAuthIntent(): Intent {
+    suspend fun authenticate(): Result<Unit> = runCatching {
         val clientId = tokenStorage.getClientId()
-            ?: throw IllegalStateException("No OAuth client ID set. Complete onboarding first.")
-        val config = AuthorizationServiceConfiguration(
-            android.net.Uri.parse(AUTH_ENDPOINT),
-            android.net.Uri.parse(TOKEN_ENDPOINT)
-        )
-        val request = AuthorizationRequest.Builder(
-            config,
-            clientId,
-            ResponseTypeValues.CODE,
-            android.net.Uri.parse(REDIRECT_URI)
-        )
-            .setScope("devices:read")
-            .build()
-        return authService.getAuthorizationRequestIntent(request)
+            ?: throw IllegalStateException("No client ID saved — complete onboarding first")
+        val clientSecret = tokenStorage.getClientSecret()
+            ?: throw IllegalStateException("No client secret saved — complete onboarding first")
+        fetchAndSaveToken(clientId, clientSecret)
     }
 
-    suspend fun handleAuthResponse(intent: Intent): Result<Unit> = runCatching {
-        val response = AuthorizationResponse.fromIntent(intent)
-            ?: throw IllegalArgumentException("No auth response in intent")
-        val tokenResponse = exchangeCode(response)
-        val tailnet = extractTailnet(tokenResponse.accessToken ?: "")
-        tokenStorage.saveTokens(
-            accessToken = tokenResponse.accessToken ?: "",
-            refreshToken = tokenResponse.refreshToken,
-            expiresAt = tokenResponse.accessTokenExpirationTime
-                ?.let { Instant.ofEpochMilli(it) } ?: Instant.now().plusSeconds(3600),
-            tailnet = tailnet
-        )
-    }
-
+    /** Re-authenticates silently when the access token has expired. */
     suspend fun refreshTokenIfNeeded(): Result<Unit> {
         if (!tokenStorage.isTokenExpired()) return Result.success(Unit)
-        return runCatching {
-            val clientId = tokenStorage.getClientId()
-                ?: throw IllegalStateException("No client ID")
-            val refreshToken = tokenStorage.getRefreshToken()
-                ?: throw IllegalStateException("No refresh token")
-            val config = AuthorizationServiceConfiguration(
-                android.net.Uri.parse(AUTH_ENDPOINT),
-                android.net.Uri.parse(TOKEN_ENDPOINT)
-            )
-            val tokenRequest = TokenRequest.Builder(config, clientId)
-                .setGrantType(GrantTypeValues.REFRESH_TOKEN)
-                .setRefreshToken(refreshToken)
+        return authenticate()
+    }
+
+    suspend fun logout() = tokenStorage.clearTokens()
+
+    private suspend fun fetchAndSaveToken(clientId: String, clientSecret: String) =
+        withContext(Dispatchers.IO) {
+            val body = FormBody.Builder()
+                .add("grant_type", "client_credentials")
+                .add("client_id", clientId)
+                .add("client_secret", clientSecret)
                 .build()
-            val tokenResponse = suspendCoroutine { cont ->
-                authService.performTokenRequest(tokenRequest) { resp, ex ->
-                    if (resp != null) cont.resume(resp)
-                    else cont.resumeWithException(ex ?: RuntimeException("Refresh failed"))
-                }
+            val request = Request.Builder()
+                .url(TOKEN_ENDPOINT)
+                .post(body)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw IOException("Empty response")
+
+            if (!response.isSuccessful) {
+                val msg = runCatching {
+                    JSONObject(responseBody).optString("message", responseBody)
+                }.getOrDefault(responseBody)
+                throw IOException("Tailscale auth failed (${response.code}): $msg")
             }
-            val tailnet = tokenStorage.getTailnet() ?: "-"
+
+            val json = JSONObject(responseBody)
+            val accessToken = json.getString("access_token")
+            val expiresIn = json.optLong("expires_in", 3600L)
+
             tokenStorage.saveTokens(
-                accessToken  = tokenResponse.accessToken ?: "",
-                refreshToken = tokenResponse.refreshToken ?: refreshToken,
-                expiresAt    = tokenResponse.accessTokenExpirationTime
-                    ?.let { Instant.ofEpochMilli(it) } ?: Instant.now().plusSeconds(3600),
-                tailnet      = tailnet
+                accessToken = accessToken,
+                refreshToken = null,
+                expiresAt = Instant.now().plusSeconds(expiresIn),
+                // '-' is Tailscale's wildcard tailnet — resolves to the token's own tailnet
+                tailnet = "-"
             )
         }
-    }
-
-    suspend fun logout() {
-        authService.dispose()
-        tokenStorage.clearTokens()   // keeps client ID so user skips step 1 next time
-    }
-
-    private suspend fun exchangeCode(response: AuthorizationResponse): TokenResponse =
-        suspendCoroutine { cont ->
-            authService.performTokenRequest(response.createTokenExchangeRequest()) { resp, ex ->
-                if (resp != null) cont.resume(resp)
-                else cont.resumeWithException(ex ?: RuntimeException("Token exchange failed"))
-            }
-        }
-
-    private fun extractTailnet(token: String): String = runCatching {
-        val payload = token.split(".")[1]
-        val decoded = String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE))
-        org.json.JSONObject(decoded).optString("tailnet", "-")
-    }.getOrDefault("-")
 }

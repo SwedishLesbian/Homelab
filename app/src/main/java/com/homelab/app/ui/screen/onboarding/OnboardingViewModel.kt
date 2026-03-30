@@ -1,6 +1,5 @@
 package com.homelab.app.ui.screen.onboarding
 
-import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.homelab.app.data.repository.AuthRepository
@@ -12,14 +11,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class OnboardingStep { CLIENT_ID, SIGN_IN }
+enum class OnboardingStep { CLIENT_ID, CLIENT_SECRET }
 
 data class OnboardingState(
     val step: OnboardingStep = OnboardingStep.CLIENT_ID,
     val clientIdInput: String = "",
+    val clientSecretInput: String = "",
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
-    val authIntent: Intent? = null,
     val error: String? = null
 )
 
@@ -37,13 +36,17 @@ class OnboardingViewModel @Inject constructor(
                 authRepository.isAuthenticated() ->
                     _state.update { it.copy(isAuthenticated = true) }
                 authRepository.hasClientId() ->
-                    _state.update { it.copy(step = OnboardingStep.SIGN_IN) }
+                    _state.update { it.copy(step = OnboardingStep.CLIENT_SECRET) }
             }
         }
     }
 
     fun onClientIdChanged(value: String) {
         _state.update { it.copy(clientIdInput = value, error = null) }
+    }
+
+    fun onClientSecretChanged(value: String) {
+        _state.update { it.copy(clientSecretInput = value, error = null) }
     }
 
     fun saveClientId() {
@@ -54,25 +57,26 @@ class OnboardingViewModel @Inject constructor(
         }
         viewModelScope.launch {
             authRepository.saveClientId(id)
-            _state.update { it.copy(step = OnboardingStep.SIGN_IN, error = null) }
+            _state.update { it.copy(step = OnboardingStep.CLIENT_SECRET, error = null) }
         }
     }
 
-    fun startAuth() {
+    fun connect() {
+        val secret = _state.value.clientSecretInput.trim()
+        if (secret.isBlank()) {
+            _state.update { it.copy(error = "Please enter your OAuth client secret") }
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
-            runCatching { authRepository.buildAuthIntent() }
-                .onSuccess { intent -> _state.update { it.copy(authIntent = intent, isLoading = false) } }
-                .onFailure { e  -> _state.update { it.copy(isLoading = false, error = e.message) } }
-        }
-    }
-
-    fun handleAuthResult(data: Intent) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, authIntent = null) }
-            authRepository.handleAuthResponse(data)
+            authRepository.saveClientSecret(secret)
+            authRepository.authenticate()
                 .onSuccess { _state.update { it.copy(isAuthenticated = true, isLoading = false) } }
-                .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message ?: "Sign-in failed") } }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(isLoading = false, error = e.message ?: "Connection failed")
+                    }
+                }
         }
     }
 
