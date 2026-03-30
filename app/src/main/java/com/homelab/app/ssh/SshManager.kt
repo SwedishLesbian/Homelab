@@ -21,26 +21,30 @@ class SshManager @Inject constructor(
     suspend fun connect(
         sessionId: String,
         host: Host,
-        username: String,
-        keyId: String?,
-        onHostKeyVerification: suspend (String) -> Boolean
+        authParams: AuthParams
     ): Result<SshSession> = withContext(Dispatchers.IO) {
         runCatching {
             val client = SSHClient()
-            // Use strict host key checking in production
             client.addHostKeyVerifier(PromiscuousVerifier())
             client.connectTimeout = 10_000
             client.connect(host.ip)
 
-            if (keyId != null) {
-                val privateKey = keystoreManager.getPrivateKey(keyId)
-                if (privateKey != null) {
-                    client.authPublickey(username, AndroidKeystoreKeyProvider(privateKey))
-                } else {
-                    throw IllegalStateException("SSH key not found in keystore: $keyId")
+            when (authParams.authMethod) {
+                AuthMethod.TAILSCALE_SSH -> {
+                    client.authNone(authParams.username)
                 }
-            } else {
-                throw IllegalArgumentException("No SSH key configured for this host")
+                AuthMethod.SSH_KEY -> {
+                    val keyId = authParams.keyId
+                        ?: throw IllegalArgumentException("No SSH key selected")
+                    val privateKey = keystoreManager.getPrivateKey(keyId)
+                        ?: throw IllegalStateException("SSH key not found in keystore: $keyId")
+                    client.authPublickey(authParams.username, AndroidKeystoreKeyProvider(privateKey))
+                }
+                AuthMethod.PASSWORD -> {
+                    val password = authParams.password
+                        ?: throw IllegalArgumentException("No password provided")
+                    client.authPassword(authParams.username, password)
+                }
             }
 
             val session = SshSession(sessionId = sessionId, client = client, host = host)

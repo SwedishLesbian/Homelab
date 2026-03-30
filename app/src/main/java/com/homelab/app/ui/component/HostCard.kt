@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.homelab.app.data.model.Host
-import com.homelab.app.ui.theme.HomelabSuccess
 import com.homelab.app.ui.theme.HomelabBorder
 
 @Composable
@@ -38,10 +37,6 @@ fun HostCard(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status dot
-            StatusDot(isOnline = host.isOnline)
-            Spacer(Modifier.width(12.dp))
-
             // Host info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -76,7 +71,6 @@ fun HostCard(
             // Connect button
             Button(
                 onClick = onConnect,
-                enabled = host.isOnline,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.Terminal, null, modifier = Modifier.size(16.dp))
@@ -85,16 +79,6 @@ fun HostCard(
             }
         }
     }
-}
-
-@Composable
-fun StatusDot(isOnline: Boolean) {
-    val color = if (isOnline) HomelabSuccess else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-    Surface(
-        modifier = Modifier.size(10.dp),
-        shape = RoundedCornerShape(50),
-        color = color
-    ) {}
 }
 
 @Composable
