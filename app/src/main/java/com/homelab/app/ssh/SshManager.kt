@@ -48,7 +48,7 @@ class SshManager @Inject constructor(
                 AuthMethod.PASSWORD -> {
                     val password = authParams.password
                         ?: throw IllegalArgumentException("No password provided")
-                    client.authPassword(authParams.username) { password.toCharArray() }
+                    client.authPassword(authParams.username, password)
                 }
             }
 
