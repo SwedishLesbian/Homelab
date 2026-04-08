@@ -6,6 +6,7 @@ import com.homelab.app.data.model.Host
 import com.homelab.app.data.remote.TailscaleApiService
 import com.homelab.app.data.security.TokenStorage
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.format.DateTimeParseException
@@ -26,7 +27,13 @@ class HostRepository @Inject constructor(
     suspend fun refreshHosts(): Result<Unit> = runCatching {
         val tailnet = tokenStorage.getTailnet() ?: throw IllegalStateException("Not authenticated")
         val response = apiService.getDevices(tailnet)
+
+        // Preserve user-configured fields (credentials, favorites, lastConnected)
+        // that would otherwise be wiped by the upsert from API data.
+        val existingById = hostDao.getAllHosts().first().associateBy { it.id }
+
         val entities = response.devices.map { dto ->
+            val existing = existingById[dto.id]
             HostEntity(
                 id = dto.id,
                 name = dto.name.substringBefore("."),
@@ -35,7 +42,11 @@ class HostRepository @Inject constructor(
                 isOnline = dto.online,
                 os = dto.os,
                 tags = dto.tags ?: emptyList(),
-                lastSeen = parseInstant(dto.lastSeen)
+                lastSeen = parseInstant(dto.lastSeen),
+                isFavorite = existing?.isFavorite ?: false,
+                sshUsername = existing?.sshUsername,
+                sshKeyId = existing?.sshKeyId,
+                lastConnected = existing?.lastConnected
             )
         }
         hostDao.upsertHosts(entities)

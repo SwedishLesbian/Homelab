@@ -126,7 +126,8 @@ class HomeViewModel @Inject constructor(
             it.copy(
                 pendingConnectHost = host,
                 sheetUsername = host.sshUsername ?: "root",
-                sheetAuthMethod = AuthMethod.TAILSCALE_SSH,
+                // Default to SSH_KEY if the host already has a key saved; else TAILSCALE_SSH
+                sheetAuthMethod = if (host.sshKeyId != null) AuthMethod.SSH_KEY else AuthMethod.TAILSCALE_SSH,
                 sheetSelectedKeyId = host.sshKeyId ?: it.availableKeys.firstOrNull()?.id,
                 sheetPassword = "",
                 sheetDeployKey = false

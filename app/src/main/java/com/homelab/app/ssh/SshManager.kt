@@ -4,6 +4,7 @@ import com.homelab.app.data.model.Host
 import com.homelab.app.data.security.KeystoreManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
@@ -25,7 +26,13 @@ class SshManager @Inject constructor(
         authParams: AuthParams
     ): Result<SshSession> = withContext(Dispatchers.IO) {
         runCatching {
-            val client = SSHClient()
+            // Android's BouncyCastle strips X25519 (Curve25519 DH), which sshj prefers by default.
+            // Filter those out so the handshake falls back to ECDH-NIST which Android always has.
+            val config = DefaultConfig()
+            config.keyExchangeFactories = config.keyExchangeFactories.filter { kex ->
+                !kex.name.contains("curve25519", ignoreCase = true)
+            }
+            val client = SSHClient(config)
             client.addHostKeyVerifier(PromiscuousVerifier())
             client.connectTimeout = 10_000
             client.connect(host.ip)
