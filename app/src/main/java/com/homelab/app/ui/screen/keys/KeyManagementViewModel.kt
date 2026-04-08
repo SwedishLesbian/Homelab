@@ -15,6 +15,7 @@ import javax.inject.Inject
 data class KeyManagementState(
     val keys: List<SshKey> = emptyList(),
     val isGenerating: Boolean = false,
+    val isImporting: Boolean = false,
     val error: String? = null
 )
 
@@ -43,10 +44,23 @@ class KeyManagementViewModel @Inject constructor(
         }
     }
 
+    fun importKey(name: String, pemContent: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isImporting = true, error = null) }
+            runCatching { sshKeyRepository.importKeyFromPem(name, pemContent) }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+            _state.update { it.copy(isImporting = false) }
+        }
+    }
+
     fun deleteKey(keyId: String) {
         viewModelScope.launch {
             runCatching { sshKeyRepository.deleteKey(keyId) }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }
+    }
+
+    fun clearError() {
+        _state.update { it.copy(error = null) }
     }
 }

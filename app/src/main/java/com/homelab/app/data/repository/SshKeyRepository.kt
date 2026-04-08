@@ -24,14 +24,12 @@ class SshKeyRepository @Inject constructor(
         return key
     }
 
-    suspend fun importKey(name: String, publicKey: String): SshKey {
-        val key = SshKey(
-            id = "imported_${java.util.UUID.randomUUID()}",
-            name = name,
-            publicKey = publicKey,
-            keyType = detectKeyType(publicKey),
-            createdAt = java.time.Instant.now()
-        )
+    /**
+     * Imports a key from an OpenSSH/PEM private key file.
+     * Supports -----BEGIN OPENSSH PRIVATE KEY-----, RSA PKCS1, and EC SEC1 formats.
+     */
+    suspend fun importKeyFromPem(name: String, pemContent: String): SshKey {
+        val key = keystoreManager.importFromPem(name, pemContent)
         sshKeyDao.upsertKey(SshKeyEntity.fromDomain(key))
         return key
     }

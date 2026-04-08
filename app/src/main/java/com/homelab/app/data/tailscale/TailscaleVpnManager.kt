@@ -49,9 +49,12 @@ class TailscaleVpnManager @Inject constructor(
         }
 
         override fun onLost(network: Network) {
-            // Re-check — another VPN might still be active
-            _state.value = if (isTailscaleInstalled()) TailscaleState.DISCONNECTED
-                           else TailscaleState.NOT_INSTALLED
+            // Re-scan all remaining networks — Tailscale may still have another
+            _state.value = when {
+                !isTailscaleInstalled() -> TailscaleState.NOT_INSTALLED
+                isAnyTailscaleNetworkActive() -> TailscaleState.CONNECTED
+                else -> TailscaleState.DISCONNECTED
+            }
         }
     }
 
@@ -109,13 +112,14 @@ class TailscaleVpnManager @Inject constructor(
 
     private fun checkCurrentState(): TailscaleState {
         if (!isTailscaleInstalled()) return TailscaleState.NOT_INSTALLED
-
-        val activeNetwork = connectivityManager.activeNetwork
-        if (activeNetwork != null && isTailscaleNetwork(activeNetwork)) {
-            return TailscaleState.CONNECTED
-        }
-        return TailscaleState.DISCONNECTED
+        return if (isAnyTailscaleNetworkActive()) TailscaleState.CONNECTED
+               else TailscaleState.DISCONNECTED
     }
+
+    // Iterate ALL networks (not just activeNetwork) because Android may show the
+    // regular WiFi as active even while the Tailscale VPN tunnel is also up.
+    private fun isAnyTailscaleNetworkActive(): Boolean =
+        connectivityManager.allNetworks.any { isTailscaleNetwork(it) }
 
     private fun isTailscaleInstalled(): Boolean = try {
         context.packageManager.getPackageInfo(TAILSCALE_PACKAGE, 0)
@@ -127,7 +131,6 @@ class TailscaleVpnManager @Inject constructor(
     private fun isTailscaleNetwork(network: Network): Boolean {
         val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
         if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return false
-
         val linkProps = connectivityManager.getLinkProperties(network) ?: return false
         return hasTailscaleAddress(linkProps)
     }
@@ -138,9 +141,7 @@ class TailscaleVpnManager @Inject constructor(
             isTailscaleCgnatAddress(addr)
         }
 
-    /**
-     * Tailscale assigns addresses in 100.64.0.0/10 (CGNAT range: 100.64.x.x – 100.127.x.x)
-     */
+    /** Tailscale assigns addresses in 100.64.0.0/10 (100.64.x.x – 100.127.x.x) */
     private fun isTailscaleCgnatAddress(ip: String): Boolean {
         val parts = ip.split(".").mapNotNull { it.toIntOrNull() }
         if (parts.size != 4) return false

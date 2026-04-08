@@ -13,5 +13,6 @@ data class Host(
     val lastSeen: Instant,
     val isFavorite: Boolean = false,
     val sshUsername: String? = null,
-    val sshKeyId: String? = null
+    val sshKeyId: String? = null,
+    val sshAuthMethod: String? = null
 )

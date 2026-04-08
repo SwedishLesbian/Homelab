@@ -46,6 +46,7 @@ class HostRepository @Inject constructor(
                 isFavorite = existing?.isFavorite ?: false,
                 sshUsername = existing?.sshUsername,
                 sshKeyId = existing?.sshKeyId,
+                sshAuthMethod = existing?.sshAuthMethod,
                 lastConnected = existing?.lastConnected
             )
         }
@@ -58,8 +59,8 @@ class HostRepository @Inject constructor(
     suspend fun setFavorite(hostId: String, isFavorite: Boolean) =
         hostDao.setFavorite(hostId, isFavorite)
 
-    suspend fun updateSshConfig(hostId: String, username: String?, keyId: String?) =
-        hostDao.updateSshConfig(hostId, username, keyId)
+    suspend fun updateSshConfig(hostId: String, username: String?, keyId: String?, authMethod: String? = null) =
+        hostDao.updateSshConfig(hostId, username, keyId, authMethod)
 
     suspend fun updateLastConnected(hostId: String) =
         hostDao.updateLastConnected(hostId, Instant.now())

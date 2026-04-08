@@ -12,7 +12,7 @@ import com.homelab.app.data.local.entity.SshKeyEntity
 
 @Database(
     entities = [HostEntity::class, SessionEntity::class, SshKeyEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
