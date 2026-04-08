@@ -8,8 +8,16 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.AutofillNode
+import androidx.compose.ui.autofill.AutofillType
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalAutofill
+import androidx.compose.ui.platform.LocalAutofillTree
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.ImeAction
@@ -23,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 
 private const val TAILSCALE_OAUTH_URL = "https://login.tailscale.com/admin/settings/oauth"
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun OnboardingScreen(
     onAuthenticated: () -> Unit,
@@ -31,7 +40,26 @@ fun OnboardingScreen(
     val state by viewModel.state.collectAsState()
     val uriHandler = LocalUriHandler.current
     val focusManager = LocalFocusManager.current
+    val autofill = LocalAutofill.current
+    val autofillTree = LocalAutofillTree.current
     var secretVisible by remember { mutableStateOf(false) }
+
+    // Register autofill nodes so password managers (Bitwarden, 1Password, etc.) can
+    // recognise Client ID as "username" and Client Secret as "password" and save/fill them.
+    val clientIdNode = remember {
+        AutofillNode(
+            autofillTypes = listOf(AutofillType.Username),
+            onFill = { viewModel.onClientIdChanged(it) }
+        )
+    }
+    val clientSecretNode = remember {
+        AutofillNode(
+            autofillTypes = listOf(AutofillType.Password),
+            onFill = { viewModel.onClientSecretChanged(it) }
+        )
+    }
+    autofillTree += clientIdNode
+    autofillTree += clientSecretNode
 
     LaunchedEffect(state.isAuthenticated) {
         if (state.isAuthenticated) onAuthenticated()
@@ -89,7 +117,10 @@ fun OnboardingScreen(
                 imeAction = ImeAction.Next
             ),
             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { clientIdNode.boundingBox = it.boundsInWindow() }
+                .onFocusChanged { if (it.isFocused) autofill?.requestAutofillForNode(clientIdNode) }
         )
 
         Spacer(Modifier.height(12.dp))
@@ -117,7 +148,10 @@ fun OnboardingScreen(
                 imeAction = ImeAction.Done
             ),
             keyboardActions = KeyboardActions(onDone = { viewModel.connect() }),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { clientSecretNode.boundingBox = it.boundsInWindow() }
+                .onFocusChanged { if (it.isFocused) autofill?.requestAutofillForNode(clientSecretNode) }
         )
 
         Spacer(Modifier.height(20.dp))
