@@ -18,12 +18,14 @@ data class HostEntity(
     val isFavorite: Boolean = false,
     val sshUsername: String? = null,
     val sshKeyId: String? = null,
+    val sshAuthMethod: String? = null,
     val lastConnected: Instant? = null
 ) {
     fun toDomain() = Host(
         id = id, name = name, hostname = hostname, ip = ip,
         isOnline = isOnline, os = os, tags = tags, lastSeen = lastSeen,
-        isFavorite = isFavorite, sshUsername = sshUsername, sshKeyId = sshKeyId
+        isFavorite = isFavorite, sshUsername = sshUsername, sshKeyId = sshKeyId,
+        sshAuthMethod = sshAuthMethod
     )
 
     companion object {

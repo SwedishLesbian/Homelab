@@ -122,14 +122,19 @@ class HomeViewModel @Inject constructor(
     // --- Bottom sheet ---
 
     fun onConnectTapped(host: Host) {
+        // Restore last-used creds (password survives in-memory, auth method from DB or cache)
+        val cached = authParamsStore.getForHost(host.id)
+        val savedMethod = cached?.authMethod
+            ?: host.sshAuthMethod?.let { runCatching { AuthMethod.valueOf(it) }.getOrNull() }
+            ?: if (host.sshKeyId != null) AuthMethod.SSH_KEY else AuthMethod.SSH_KEY
+
         _state.update {
             it.copy(
                 pendingConnectHost = host,
-                sheetUsername = host.sshUsername ?: "root",
-                // Default to SSH_KEY if the host already has a key saved; else TAILSCALE_SSH
-                sheetAuthMethod = if (host.sshKeyId != null) AuthMethod.SSH_KEY else AuthMethod.TAILSCALE_SSH,
-                sheetSelectedKeyId = host.sshKeyId ?: it.availableKeys.firstOrNull()?.id,
-                sheetPassword = "",
+                sheetUsername = host.sshUsername ?: cached?.username ?: "root",
+                sheetAuthMethod = savedMethod,
+                sheetSelectedKeyId = host.sshKeyId ?: cached?.keyId ?: it.availableKeys.firstOrNull()?.id,
+                sheetPassword = cached?.password ?: "",
                 sheetDeployKey = false
             )
         }
@@ -173,13 +178,15 @@ class HomeViewModel @Inject constructor(
         )
 
         authParamsStore.put(sessionId, authParams)
+        authParamsStore.putForHost(host.id, authParams) // restore password next time
 
-        // Persist username and key for next time
+        // Persist username, key, and auth method for next launch
         viewModelScope.launch {
             hostRepository.updateSshConfig(
                 host.id,
                 authParams.username,
-                authParams.keyId
+                authParams.keyId,
+                authParams.authMethod.name
             )
         }
 

@@ -13,8 +13,8 @@ android {
         applicationId = "com.homelab.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.0.2"
+        versionCode = 3
+        versionName = "0.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -83,8 +83,10 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
-    // sshj manages its own BouncyCastle (bcprov-jdk18on) transitively
+    // sshj manages its own BouncyCastle (bcprov-jdk18on) transitively.
+    // Explicitly declare bcpkix (PEM parsing) since sshj exposes it as implementation, not api.
     implementation("com.hierynomus:sshj:0.38.0")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.77")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")

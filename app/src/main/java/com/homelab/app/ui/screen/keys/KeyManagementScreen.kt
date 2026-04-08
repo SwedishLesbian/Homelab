@@ -23,10 +23,20 @@ fun KeyManagementScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showGenerateDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     var newKeyName by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var copiedKeyId by remember { mutableStateOf<String?>(null) }
+
+    // Show error in a snackbar
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.error) {
+        state.error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -36,12 +46,16 @@ fun KeyManagementScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
                 },
                 actions = {
+                    IconButton(onClick = { showImportDialog = true }) {
+                        Icon(Icons.Default.FileDownload, "Import Key")
+                    }
                     IconButton(onClick = { showGenerateDialog = true }) {
                         Icon(Icons.Default.Add, "Generate Key")
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding),
@@ -62,7 +76,7 @@ fun KeyManagementScreen(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "No SSH keys yet. Tap + to generate one.",
+                                "No SSH keys yet.\nTap + to generate or \u2913 to import.",
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
                         }
@@ -84,6 +98,7 @@ fun KeyManagementScreen(
         }
     }
 
+    // Generate dialog
     if (showGenerateDialog) {
         AlertDialog(
             onDismissRequest = { showGenerateDialog = false; newKeyName = "" },
@@ -91,7 +106,7 @@ fun KeyManagementScreen(
             text = {
                 Column {
                     Text(
-                        "Creates an ed25519 key stored in the Android Keystore. " +
+                        "Creates an ECDSA P-256 key stored in the Android Keystore. " +
                         "The private key never leaves your device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -131,6 +146,76 @@ fun KeyManagementScreen(
             }
         )
     }
+
+    // Import dialog
+    if (showImportDialog) {
+        ImportKeyDialog(
+            isImporting = state.isImporting,
+            onDismiss = { showImportDialog = false },
+            onImport = { name, pem ->
+                viewModel.importKey(name, pem)
+                showImportDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ImportKeyDialog(
+    isImporting: Boolean,
+    onDismiss: () -> Unit,
+    onImport: (name: String, pem: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var pem by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import SSH Key") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Paste your private key file contents. Supported formats: " +
+                    "OpenSSH (-----BEGIN OPENSSH PRIVATE KEY-----), " +
+                    "RSA PKCS1, and EC SEC1.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Key Name") },
+                    placeholder = { Text("e.g. Laptop Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = pem,
+                    onValueChange = { pem = it },
+                    label = { Text("Private Key (PEM)") },
+                    placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----\n...") },
+                    minLines = 5,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onImport(name.trim(), pem.trim()) },
+                enabled = name.isNotBlank() && pem.isNotBlank() && !isImporting
+            ) {
+                if (isImporting) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Import")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
@@ -175,7 +260,7 @@ private fun SshKeyCard(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete \"${key.name}\"?") },
-            text = { Text("This will permanently remove the key from the Keystore. Any hosts using it will need a new key.") },
+            text = { Text("This will permanently remove the key. Any hosts using it will need a new key.") },
             confirmButton = {
                 Button(
                     onClick = { onDelete(); showDeleteDialog = false },

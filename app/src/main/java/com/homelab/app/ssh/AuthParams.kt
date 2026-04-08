@@ -19,15 +19,24 @@ data class AuthParams(
 
 @Singleton
 class AuthParamsStore @Inject constructor() {
-    private val params = mutableMapOf<String, AuthParams>()
+    // Keyed by sessionId — used by TerminalViewModel to pick up creds
+    private val bySession = mutableMapOf<String, AuthParams>()
+    // Keyed by hostId — used to restore last-used creds when re-opening the bottom sheet
+    private val byHost = mutableMapOf<String, AuthParams>()
 
     fun put(sessionId: String, authParams: AuthParams) {
-        params[sessionId] = authParams
+        bySession[sessionId] = authParams
     }
 
-    fun get(sessionId: String): AuthParams? = params[sessionId]
+    fun get(sessionId: String): AuthParams? = bySession[sessionId]
 
     fun remove(sessionId: String) {
-        params.remove(sessionId)
+        bySession.remove(sessionId)
     }
+
+    fun putForHost(hostId: String, authParams: AuthParams) {
+        byHost[hostId] = authParams
+    }
+
+    fun getForHost(hostId: String): AuthParams? = byHost[hostId]
 }

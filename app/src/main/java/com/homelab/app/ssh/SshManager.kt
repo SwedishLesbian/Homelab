@@ -6,11 +6,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.KeyType
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.method.AuthNone
 import java.security.PrivateKey
 import java.security.PublicKey
+import java.security.interfaces.ECKey
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,12 +28,13 @@ class SshManager @Inject constructor(
         authParams: AuthParams
     ): Result<SshSession> = withContext(Dispatchers.IO) {
         runCatching {
-            // Android's BouncyCastle strips X25519 (Curve25519 DH), which sshj prefers by default.
-            // Filter those out so the handshake falls back to ECDH-NIST which Android always has.
+            // Android's BouncyCastle may still lack some kex algorithms even after replacing
+            // the provider — filter Curve25519 as belt-and-suspenders.
             val config = DefaultConfig()
             config.keyExchangeFactories = config.keyExchangeFactories.filter { kex ->
                 !kex.name.contains("curve25519", ignoreCase = true)
             }
+
             val client = SSHClient(config)
             client.addHostKeyVerifier(PromiscuousVerifier())
             client.connectTimeout = 10_000
@@ -39,18 +42,21 @@ class SshManager @Inject constructor(
 
             when (authParams.authMethod) {
                 AuthMethod.TAILSCALE_SSH -> {
-                    // Tailscale SSH: authentication is handled by the Tailscale network layer.
-                    // The SSH server accepts the connecting node's identity automatically.
-                    // Attempt "none" auth first; if the server doesn't allow it, fall back to
-                    // publickey with the Tailscale-managed key (most servers accept either).
+                    // Tailscale SSH authenticates at the network layer via WireGuard identity.
+                    // The SSH server grants access based on the connecting Tailscale node.
                     client.auth(authParams.username, AuthNone())
                 }
                 AuthMethod.SSH_KEY -> {
                     val keyId = authParams.keyId
                         ?: throw IllegalArgumentException("No SSH key selected")
                     val privateKey = keystoreManager.getPrivateKey(keyId)
-                        ?: throw IllegalStateException("SSH key not found in keystore: $keyId")
-                    client.authPublickey(authParams.username, AndroidKeystoreKeyProvider(privateKey))
+                        ?: throw IllegalStateException("SSH key not found: $keyId")
+                    val publicKey = keystoreManager.getPublicKey(keyId)
+                        ?: throw IllegalStateException("Public key not found: $keyId")
+                    client.authPublickey(
+                        authParams.username,
+                        KeystoreKeyProvider(privateKey, publicKey)
+                    )
                 }
                 AuthMethod.PASSWORD -> {
                     val password = authParams.password
@@ -79,11 +85,28 @@ class SshManager @Inject constructor(
 }
 
 /**
- * Bridges Android Keystore PrivateKey to sshj's KeyProvider interface.
- * The private key never leaves the secure element — signing happens in hardware.
+ * Bridges a PrivateKey + PublicKey pair (Android Keystore or imported) to sshj's KeyProvider.
+ * Detects key type from the actual key object so RSA/EC/Ed25519 all work correctly.
  */
-class AndroidKeystoreKeyProvider(private val privateKey: PrivateKey) : KeyProvider {
+class KeystoreKeyProvider(
+    private val privateKey: PrivateKey,
+    private val publicKey: PublicKey
+) : KeyProvider {
     override fun getPrivate(): PrivateKey = privateKey
-    override fun getPublic(): PublicKey = throw UnsupportedOperationException("Use stored public key")
-    override fun getType(): net.schmizz.sshj.common.KeyType = net.schmizz.sshj.common.KeyType.ECDSA256
+    override fun getPublic(): PublicKey = publicKey
+    override fun getType(): KeyType = when {
+        privateKey.algorithm.equals("RSA", ignoreCase = true) -> KeyType.RSA
+        privateKey.algorithm.equals("Ed25519", ignoreCase = true) ||
+            privateKey.algorithm.equals("EdDSA", ignoreCase = true) -> KeyType.ED25519
+        privateKey is ECKey || privateKey.algorithm.equals("EC", ignoreCase = true) -> {
+            // Detect ECDSA curve from key size
+            val bitLength = runCatching { (publicKey as ECKey).params.order.bitLength() }.getOrDefault(256)
+            when {
+                bitLength >= 500 -> KeyType.ECDSA521
+                bitLength >= 370 -> KeyType.ECDSA384
+                else -> KeyType.ECDSA256
+            }
+        }
+        else -> KeyType.ECDSA256
+    }
 }

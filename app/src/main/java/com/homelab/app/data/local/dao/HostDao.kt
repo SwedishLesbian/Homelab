@@ -33,8 +33,8 @@ interface HostDao {
     @Query("UPDATE hosts SET lastConnected = :time WHERE id = :id")
     suspend fun updateLastConnected(id: String, time: java.time.Instant)
 
-    @Query("UPDATE hosts SET sshUsername = :username, sshKeyId = :keyId WHERE id = :id")
-    suspend fun updateSshConfig(id: String, username: String?, keyId: String?)
+    @Query("UPDATE hosts SET sshUsername = :username, sshKeyId = :keyId, sshAuthMethod = :authMethod WHERE id = :id")
+    suspend fun updateSshConfig(id: String, username: String?, keyId: String?, authMethod: String?)
 
     @Query("DELETE FROM hosts WHERE id NOT IN (:activeIds)")
     suspend fun deleteStaleHosts(activeIds: List<String>)
