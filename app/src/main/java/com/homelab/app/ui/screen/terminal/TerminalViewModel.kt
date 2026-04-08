@@ -6,7 +6,11 @@ import com.homelab.app.data.model.Host
 import com.homelab.app.data.model.Session
 import com.homelab.app.data.model.SessionStatus
 import com.homelab.app.data.repository.HostRepository
+import com.homelab.app.data.repository.SshKeyRepository
 import com.homelab.app.data.repository.SessionRepository
+import com.homelab.app.ssh.AuthMethod
+import com.homelab.app.ssh.AuthParams
+import com.homelab.app.ssh.AuthParamsStore
 import com.homelab.app.ssh.SshManager
 import com.homelab.app.ssh.SshSession
 import com.homelab.app.ssh.TerminalEmulator
@@ -24,14 +28,17 @@ data class TerminalState(
     val status: SessionStatus = SessionStatus.CONNECTING,
     val outputLines: List<androidx.compose.ui.text.AnnotatedString> = emptyList(),
     val hostName: String = "",
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val keyDeployed: Boolean = false
 )
 
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
     private val sshManager: SshManager,
     private val hostRepository: HostRepository,
-    private val sessionRepository: SessionRepository
+    private val sessionRepository: SessionRepository,
+    private val authParamsStore: AuthParamsStore,
+    private val sshKeyRepository: SshKeyRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TerminalState())
@@ -41,8 +48,7 @@ class TerminalViewModel @Inject constructor(
     private val emulator = TerminalEmulator()
     private var currentSessionId: String = ""
     private var cachedHost: Host? = null
-    private var cachedUsername: String = "root"
-    private var cachedKeyId: String? = null
+    private var cachedAuthParams: AuthParams? = null
 
     fun connect(sessionId: String, hostId: String) {
         currentSessionId = sessionId
@@ -50,24 +56,28 @@ class TerminalViewModel @Inject constructor(
             val host = hostRepository.getAllHosts().firstOrNull()?.find { it.id == hostId }
                 ?: return@launch
             cachedHost = host
-            cachedUsername = host.sshUsername ?: "root"
-            cachedKeyId = host.sshKeyId
+
+            // Look up auth params from the store (set by HomeViewModel's bottom sheet)
+            val authParams = authParamsStore.get(sessionId)
+            if (authParams == null) {
+                // Fallback: use host's stored config
+                cachedAuthParams = AuthParams(
+                    username = host.sshUsername ?: "root",
+                    authMethod = if (host.sshKeyId != null) AuthMethod.SSH_KEY else AuthMethod.TAILSCALE_SSH,
+                    keyId = host.sshKeyId
+                )
+            } else {
+                cachedAuthParams = authParams
+                authParamsStore.remove(sessionId)
+            }
+
             _state.update { it.copy(hostName = host.name) }
             doConnect(host, attempt = 0)
         }
     }
 
     private suspend fun doConnect(host: Host, attempt: Int) {
-        val keyId = cachedKeyId
-        if (keyId == null) {
-            _state.update {
-                it.copy(
-                    status = SessionStatus.FAILED,
-                    errorMessage = "No SSH key configured for this host. Assign one in host settings."
-                )
-            }
-            return
-        }
+        val authParams = cachedAuthParams ?: return
 
         _state.update {
             it.copy(
@@ -80,14 +90,18 @@ class TerminalViewModel @Inject constructor(
         sshManager.connect(
             sessionId = currentSessionId,
             host = host,
-            username = cachedUsername,
-            keyId = keyId,
-            onHostKeyVerification = { true }
+            authParams = authParams
         ).onSuccess { session ->
             sshSession = session
             _state.update { it.copy(status = SessionStatus.CONNECTED) }
             saveSession(host, SessionStatus.CONNECTED)
             hostRepository.updateLastConnected(host.id)
+
+            // Deploy public key if requested
+            if (authParams.deployKeyId != null) {
+                deployPublicKey(session, authParams.deployKeyId)
+            }
+
             collectOutputAndReconnect(host, session)
         }.onFailure { e ->
             if (attempt < MAX_RECONNECT_ATTEMPTS) {
@@ -95,7 +109,7 @@ class TerminalViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         status = SessionStatus.RECONNECTING,
-                        errorMessage = "Retrying in ${delayMs / 1000}s… (${e.message})"
+                        errorMessage = "Retrying in ${delayMs / 1000}s... (${e.message})"
                     )
                 }
                 delay(delayMs)
@@ -112,6 +126,22 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    private fun deployPublicKey(session: SshSession, keyId: String) {
+        viewModelScope.launch {
+            sshKeyRepository.getAllKeys().firstOrNull()?.find { it.id == keyId }?.let { key ->
+                val pubKey = key.publicKey
+                val cmd = "mkdir -p ~/.ssh && echo '$pubKey' >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys\n"
+                session.sendInput(cmd)
+
+                // Update host to use this key for future connections
+                cachedHost?.let { host ->
+                    hostRepository.updateSshConfig(host.id, cachedAuthParams?.username, keyId)
+                }
+                _state.update { it.copy(keyDeployed = true) }
+            }
+        }
+    }
+
     private fun collectOutputAndReconnect(host: Host, session: SshSession) {
         viewModelScope.launch {
             session.outputFlow.collect { chunk ->
@@ -120,7 +150,6 @@ class TerminalViewModel @Inject constructor(
             }
             // Flow ended means the connection dropped
             if (_state.value.status == SessionStatus.CONNECTED) {
-                // Auto-reconnect with exponential backoff
                 doConnect(host, attempt = 0)
             }
         }
@@ -163,7 +192,7 @@ class TerminalViewModel @Inject constructor(
                 hostId = host.id,
                 hostName = host.name,
                 hostIp = host.ip,
-                username = cachedUsername,
+                username = cachedAuthParams?.username ?: "root",
                 status = status,
                 lastActive = Instant.now()
             )

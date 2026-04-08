@@ -104,10 +104,16 @@ jobs:
             ## First-time setup
 
             1. Open Homelab.
-            2. Tap **Open Tailscale Admin Console** and create a free OAuth client
-               (scope: `devices:read`, redirect URI: `com.homelab.app://oauth`).
-            3. Paste the **client ID** into Homelab.
-            4. Tap **Sign in with Tailscale** — your devices appear automatically.
+            2. Go to [Tailscale Admin → Settings → OAuth clients](https://login.tailscale.com/admin/settings/oauth) and create a client with scope `devices:read`.
+            3. Paste your **Client ID** and **Client Secret** into Homelab and tap **Connect**.
+            4. Your Tailscale devices appear automatically.
+
+            ## Connecting to a host
+
+            Tap **Connect** on any host, choose an auth method:
+            - **Tailscale SSH** — zero-config if the host has `tailscale ssh` enabled
+            - **SSH Key** — pick a key you generated in the SSH Keys screen
+            - **Password** — enter credentials, optionally deploy your public key for future logins
 
             No build secrets. No server. Works with any Tailscale account.
           files: app/build/outputs/apk/release/Homelab-${{ github.ref_name }}.apk

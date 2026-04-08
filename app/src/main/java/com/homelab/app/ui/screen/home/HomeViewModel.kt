@@ -3,10 +3,16 @@ package com.homelab.app.ui.screen.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.homelab.app.data.model.Host
+import com.homelab.app.data.model.SshKey
 import com.homelab.app.data.repository.AuthRepository
 import com.homelab.app.data.repository.HostRepository
 import com.homelab.app.data.repository.SessionRepository
-import com.homelab.app.service.HostSyncWorker
+import com.homelab.app.data.repository.SshKeyRepository
+import com.homelab.app.data.tailscale.TailscaleState
+import com.homelab.app.data.tailscale.TailscaleVpnManager
+import com.homelab.app.ssh.AuthMethod
+import com.homelab.app.ssh.AuthParams
+import com.homelab.app.ssh.AuthParamsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -23,7 +29,14 @@ data class HomeState(
     val searchQuery: String = "",
     val isRefreshing: Boolean = false,
     val error: String? = null,
-    val connectingHostId: String? = null
+    val tailscaleState: TailscaleState = TailscaleState.DISCONNECTED,
+    val availableKeys: List<SshKey> = emptyList(),
+    val pendingConnectHost: Host? = null,
+    val sheetUsername: String = "root",
+    val sheetAuthMethod: AuthMethod = AuthMethod.TAILSCALE_SSH,
+    val sheetSelectedKeyId: String? = null,
+    val sheetPassword: String = "",
+    val sheetDeployKey: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -31,7 +44,10 @@ data class HomeState(
 class HomeViewModel @Inject constructor(
     private val hostRepository: HostRepository,
     private val sessionRepository: SessionRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val sshKeyRepository: SshKeyRepository,
+    private val tailscaleVpnManager: TailscaleVpnManager,
+    private val authParamsStore: AuthParamsStore
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeState())
@@ -63,6 +79,23 @@ class HomeViewModel @Inject constructor(
                 }
         }
 
+        viewModelScope.launch {
+            tailscaleVpnManager.state.collect { tsState ->
+                val prev = _state.value.tailscaleState
+                _state.update { it.copy(tailscaleState = tsState) }
+                // Auto-refresh hosts when Tailscale connects
+                if (prev != TailscaleState.CONNECTED && tsState == TailscaleState.CONNECTED) {
+                    refresh()
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            sshKeyRepository.getAllKeys().collect { keys ->
+                _state.update { it.copy(availableKeys = keys) }
+            }
+        }
+
         refresh()
     }
 
@@ -84,6 +117,88 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             hostRepository.setFavorite(host.id, !host.isFavorite)
         }
+    }
+
+    // --- Bottom sheet ---
+
+    fun onConnectTapped(host: Host) {
+        _state.update {
+            it.copy(
+                pendingConnectHost = host,
+                sheetUsername = host.sshUsername ?: "root",
+                // Default to SSH_KEY if the host already has a key saved; else TAILSCALE_SSH
+                sheetAuthMethod = if (host.sshKeyId != null) AuthMethod.SSH_KEY else AuthMethod.TAILSCALE_SSH,
+                sheetSelectedKeyId = host.sshKeyId ?: it.availableKeys.firstOrNull()?.id,
+                sheetPassword = "",
+                sheetDeployKey = false
+            )
+        }
+    }
+
+    fun onSheetDismissed() {
+        _state.update { it.copy(pendingConnectHost = null) }
+    }
+
+    fun onSheetUsernameChanged(value: String) {
+        _state.update { it.copy(sheetUsername = value) }
+    }
+
+    fun onSheetAuthMethodChanged(method: AuthMethod) {
+        _state.update { it.copy(sheetAuthMethod = method) }
+    }
+
+    fun onSheetKeySelected(keyId: String) {
+        _state.update { it.copy(sheetSelectedKeyId = keyId) }
+    }
+
+    fun onSheetPasswordChanged(value: String) {
+        _state.update { it.copy(sheetPassword = value) }
+    }
+
+    fun onSheetDeployKeyChanged(deploy: Boolean) {
+        _state.update { it.copy(sheetDeployKey = deploy) }
+    }
+
+    fun confirmConnect(): Pair<String, String>? {
+        val host = _state.value.pendingConnectHost ?: return null
+        val sessionId = UUID.randomUUID().toString()
+
+        val authParams = AuthParams(
+            username = _state.value.sheetUsername,
+            authMethod = _state.value.sheetAuthMethod,
+            keyId = if (_state.value.sheetAuthMethod == AuthMethod.SSH_KEY) _state.value.sheetSelectedKeyId else null,
+            password = if (_state.value.sheetAuthMethod == AuthMethod.PASSWORD) _state.value.sheetPassword else null,
+            deployKeyId = if (_state.value.sheetAuthMethod == AuthMethod.PASSWORD && _state.value.sheetDeployKey)
+                _state.value.sheetSelectedKeyId else null
+        )
+
+        authParamsStore.put(sessionId, authParams)
+
+        // Persist username and key for next time
+        viewModelScope.launch {
+            hostRepository.updateSshConfig(
+                host.id,
+                authParams.username,
+                authParams.keyId
+            )
+        }
+
+        _state.update { it.copy(pendingConnectHost = null) }
+        return Pair(sessionId, host.id)
+    }
+
+    // --- Tailscale controls ---
+
+    fun connectTailscale() {
+        tailscaleVpnManager.connect()
+    }
+
+    fun openTailscaleApp() {
+        tailscaleVpnManager.openApp()
+    }
+
+    fun getTailscalePlayStoreIntent() {
+        tailscaleVpnManager.openPlayStore()
     }
 
     fun prepareSession(host: Host): String {
