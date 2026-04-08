@@ -13,7 +13,6 @@ import net.schmizz.sshj.userauth.method.AuthNone
 import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.interfaces.ECKey
-import java.security.interfaces.RSAKey
 import javax.inject.Inject
 import javax.inject.Singleton
 
